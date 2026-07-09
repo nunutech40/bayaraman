@@ -148,7 +148,35 @@ Out of MVP scope:
 
 ## 8. User Flow App
 
-### 8.1 Seller-First Transaction Flow
+### 8.1 App User Flowchart
+
+```mermaid
+flowchart TD
+  A[Seller login/register] --> B[Seller creates transaction]
+  B --> C[System generates shareable link]
+  C --> D[Seller shares link to buyer]
+  D --> E[Buyer opens transaction page]
+  E --> F[Buyer reviews agreement, fee, total, and policy]
+  F --> G[Buyer starts payment]
+  G --> H{Payment result}
+  H -->|Success| I[Funds secured]
+  H -->|Failed/expired/cancelled| X[Payment not secured]
+  I --> J[Seller delivers goods/service]
+  J --> K[Seller uploads delivery proof]
+  K --> L[Buyer review window starts]
+  L --> M{Buyer action}
+  M -->|Confirm| N[Transaction completed]
+  M -->|No action and eligible| N
+  M -->|Open dispute| O[Dispute review]
+  O --> P{Admin decision}
+  P -->|Release| N
+  P -->|Refund| Q[Buyer refunded]
+  P -->|Split settlement| R[Split settlement]
+  N --> S[Payout queue]
+  S --> T[Manual seller payout]
+```
+
+### 8.2 Seller-First Transaction Flow
 
 1. Seller registers/logs in.
 2. Seller creates transaction with title, amount, category, agreement, delivery deadline, and fee payer.
@@ -167,7 +195,7 @@ Out of MVP scope:
 15. If buyer does nothing, system may auto-release after review window if eligible.
 16. If buyer disputes, transaction moves to dispute flow.
 
-### 8.2 Dispute Flow
+### 8.3 Dispute Flow
 
 1. Buyer opens dispute from transaction page.
 2. Buyer selects reason, adds chronology, uploads evidence, and chooses requested resolution.
@@ -179,7 +207,7 @@ Out of MVP scope:
 8. Buyer and seller receive decision notification.
 9. Transaction proceeds to refund, release/completion, split settlement, or further evidence collection.
 
-### 8.3 Payout Flow
+### 8.4 Payout Flow
 
 1. Transaction reaches completed status.
 2. Seller payout request enters payout queue.
@@ -190,6 +218,26 @@ Out of MVP scope:
 7. Seller receives payout status notification.
 
 ## 9. Business Model Flow
+
+```mermaid
+flowchart LR
+  A[Social commerce / community deal] --> B[Seller shares BayarAman link]
+  B --> C[Buyer trusts neutral payment flow]
+  C --> D[Buyer pays to BayarAman]
+  D --> E[BayarAman earns transaction fee]
+  D --> F[Funds secured for transaction]
+  F --> G[Seller fulfills order/service]
+  G --> H{Transaction outcome}
+  H -->|Completed| I[Seller receives payout]
+  H -->|Buyer cancels without seller fault| J[Cancel fee may apply]
+  H -->|Seller fault/fraud| K[Buyer receives refund]
+  H -->|Partial issue| L[Split settlement]
+  I --> M[Repeat seller/buyer usage]
+  J --> M
+  K --> M
+  L --> M
+  M --> N[More trust signals and transaction volume]
+```
 
 1. User acquisition happens from communities, social commerce, freelance channels, and C2C conversations.
 2. Seller uses BayarAman as a trust signal by sharing a secure transaction link.
