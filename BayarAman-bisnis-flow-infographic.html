@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BayarAman - Bisnis Flow Infographic</title>
+  <style>
+    :root{--navy:#061a33;--blue:#0b63ce;--teal:#008f85;--purple:#6750d8;--gold:#f59e0b;--red:#ef4444;--green:#16a34a;--yellow:#ffd84d;--ink:#102744;--muted:#52677f;--line:#a9c8ef;--paper:#f7fcff}
+    *{box-sizing:border-box} body{margin:0;background:#eaf5ff;font-family:Inter,Arial,Helvetica,sans-serif;color:var(--ink)}.poster{width:1180px;max-width:100%;margin:0 auto;background:linear-gradient(#fff,#eff9ff);border:10px solid #fff;border-radius:34px;overflow:hidden;box-shadow:0 18px 40px rgba(7,34,69,.18)}
+    .hero{position:relative;min-height:185px;padding:22px 34px 26px;color:#fff;background:radial-gradient(circle at 15% 20%,#174d91 0,#061a33 42%,#020b18 100%)}h1{margin:0;text-align:center;font-size:43px;line-height:1.05;text-shadow:0 3px 0 rgba(0,0,0,.28)}.focus{width:max-content;max-width:100%;margin:14px auto 10px;padding:9px 28px;border:4px solid var(--yellow);border-radius:16px;color:var(--yellow);font-size:33px;font-weight:950;background:rgba(3,18,40,.68)}.note{display:flex;gap:12px;align-items:center;width:780px;max-width:100%;margin:0 auto;padding:13px 18px;border:1px solid rgba(255,255,255,.55);border-radius:14px;background:rgba(255,255,255,.08);font-size:18px;font-weight:850;line-height:1.35}.bigicon{position:absolute;font-size:62px;filter:drop-shadow(0 6px 2px rgba(0,0,0,.28))}.i1{left:28px;top:36px}.i2{right:36px;top:32px}.i3{right:170px;bottom:20px}.i4{left:165px;bottom:28px}
+    .content{padding:18px 26px 26px}.band{margin-top:18px;border:2px solid var(--line);border-radius:20px;background:linear-gradient(#fff,#f3fbff);box-shadow:0 7px 18px rgba(28,91,156,.08);overflow:hidden}.head{display:flex;align-items:center;gap:10px;width:max-content;max-width:100%;height:46px;padding:0 22px 0 10px;border-radius:0 18px 18px 0;color:#fff;font-size:22px;font-weight:950;background:linear-gradient(90deg,var(--blue),#004ca6)}.teal .head{background:linear-gradient(90deg,#00796f,#00a99a)}.purple .head{background:linear-gradient(90deg,#4031ad,#6d5dfc)}.gold .head{background:linear-gradient(90deg,#b46900,#f59e0b)}.red .head{background:linear-gradient(90deg,#a51616,#ef4444)}.num{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#053c8f;color:#fff;border:3px solid #9ec5ff;font-size:22px;font-weight:950}
+    .roadmap{display:grid;grid-template-columns:repeat(8,1fr);gap:14px;padding:16px 18px 12px}.step{position:relative;min-height:178px;padding:12px 10px;border:2px solid #9fc3ed;border-radius:10px;background:linear-gradient(#fff,#f4fbff);text-align:center}.step:not(:last-child)::after{content:"";position:absolute;right:-18px;top:80px;border-left:18px solid var(--blue);border-top:13px solid transparent;border-bottom:13px solid transparent;z-index:3}.badge{position:absolute;left:9px;top:8px;display:grid;place-items:center;width:33px;height:33px;border-radius:50%;background:#0754b7;color:#fff;font-size:20px;font-weight:950}.icon{display:block;margin:28px auto 8px;font-size:43px;line-height:1}.step h3,.card h3,.lane h3{margin:0;font-size:15px;line-height:1.14}.step p,.card p,.lane p{margin:7px 0 0;color:#263f5b;font-size:12px;font-weight:750;line-height:1.28}.money{display:inline-block;margin-top:8px;padding:7px 8px;border-radius:7px;background:#061a33;color:#8dfaa6;font-family:ui-monospace,Menlo,monospace;font-size:12px;text-align:left}.target{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 18px 16px;padding:11px;border:2px solid #2483df;border-radius:10px;background:#f7fcff;color:#0a3262;font-size:17px;font-weight:950;text-align:center}
+    .lanes{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:16px 18px 18px}.lane{min-height:180px;border:2px solid #b3cff0;border-radius:14px;background:#fff;padding:14px;text-align:center}.lane .icon{margin:0 auto 10px;font-size:46px}.lane h3{font-size:19px}.lane ul{margin:10px 0 0;padding-left:18px;text-align:left;color:#314964;font-size:13px;font-weight:750;line-height:1.35}.lane li+li{margin-top:5px}
+    .cards{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;padding:15px 18px 18px}.card{min-height:142px;padding:12px;border:2px solid #b3cff0;border-radius:10px;background:#fff;text-align:center}.card .icon{margin:2px auto 8px;font-size:38px}.card h3{font-size:15px}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px}.goal{border-radius:18px;border:2px solid #0b63ce;background:linear-gradient(135deg,#061a33,#073f80);color:#fff;padding:18px 20px;display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:center}.targeticon{font-size:88px;text-align:center}.goal h2{margin:0;color:var(--yellow);font-size:24px}.checks{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-top:10px;font-weight:850;font-size:14px}.check::before{content:"✓";display:inline-grid;place-items:center;width:20px;height:20px;margin-right:6px;border-radius:4px;background:#20c56b;color:#fff}.next{border-radius:18px;border:2px solid #538ee6;background:#f6fbff;padding:18px 22px}.next h2{margin:0;color:#1256b1;font-size:25px}.next p{margin:9px 0 0;color:#213d5b;font-size:16px;font-weight:750;line-height:1.35}.footer{margin-top:14px;padding:9px 18px;border-radius:999px;background:#061a33;color:#fff;text-align:center;font-weight:900;letter-spacing:.02em}
+    @media(max-width:900px){.poster{border-radius:0;border:0}.hero{padding:18px}.bigicon{display:none}h1{font-size:31px}.focus{font-size:24px}.roadmap,.cards,.lanes{grid-template-columns:repeat(2,1fr)}.step:not(:last-child)::after{display:none}.split,.goal{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="poster">
+    <section class="hero">
+      <span class="bigicon i1">🛡️</span><span class="bigicon i2">🤝</span><span class="bigicon i3">🏦</span><span class="bigicon i4">📦</span>
+      <h1>BayarAman: Bisnis Flow Rekber Modern</h1>
+      <div class="focus">🎯 Fokus: Trust, Dana Aman, Dispute Jelas</div>
+      <div class="note">ℹ️ BayarAman bukan marketplace. BayarAman adalah pihak penengah: menahan dana, mencatat bukti, lalu meneruskan dana atau refund berdasarkan status transaksi.</div>
+    </section>
+
+    <div class="content">
+      <section class="band">
+        <div class="head"><span class="num">1</span> ALUR BISNIS UTAMA</div>
+        <div class="roadmap">
+          <div class="step"><span class="badge">1</span><span class="icon">📣</span><h3>Deal di Luar Marketplace</h3><p>Buyer dan seller ketemu via WA, IG, Telegram, forum, komunitas.</p></div>
+          <div class="step"><span class="badge">2</span><span class="icon">🧾</span><h3>Seller Buat Transaksi</h3><p>Judul, nominal, kategori, kesepakatan, deadline, fee payer.</p></div>
+          <div class="step"><span class="badge">3</span><span class="icon">👀</span><h3>Buyer Review</h3><p>Buyer cek detail, total bayar, fee, refund policy, auto-release.</p></div>
+          <div class="step"><span class="badge">4</span><span class="icon">💳</span><h3>Buyer Bayar</h3><p>Dana masuk ke rekening/payment channel BayarAman.</p><span class="money">Dana belum ke seller</span></div>
+          <div class="step"><span class="badge">5</span><span class="icon">🔐</span><h3>Dana Diamankan</h3><p>Seller mendapat sinyal aman untuk kirim barang/jasa.</p></div>
+          <div class="step"><span class="badge">6</span><span class="icon">📦</span><h3>Seller Fulfillment</h3><p>Seller kirim barang/jasa dan upload bukti delivery.</p></div>
+          <div class="step"><span class="badge">7</span><span class="icon">✅</span><h3>Buyer Review</h3><p>Buyer konfirmasi selesai atau buka komplain dalam window review.</p></div>
+          <div class="step"><span class="badge">8</span><span class="icon">💸</span><h3>Settlement</h3><p>Dana diteruskan ke seller atau dikembalikan ke buyer.</p></div>
+        </div>
+        <div class="target">⭐ Nilai bisnis utama: buyer berani bayar duluan, seller tidak disandera sepihak, semua bukti terkumpul di satu halaman transaksi.</div>
+      </section>
+
+      <section class="band teal">
+        <div class="head"><span class="num">2</span> PERAN DALAM BISNIS FLOW</div>
+        <div class="lanes">
+          <div class="lane"><span class="icon">🛒</span><h3>Buyer</h3><ul><li>Review transaksi sebelum bayar</li><li>Bayar ke BayarAman</li><li>Konfirmasi terima barang/jasa</li><li>Buka dispute jika bermasalah</li></ul></div>
+          <div class="lane"><span class="icon">🏪</span><h3>Seller</h3><ul><li>Buat link transaksi</li><li>Share link ke buyer</li><li>Kirim setelah dana aman</li><li>Terima payout setelah selesai</li></ul></div>
+          <div class="lane"><span class="icon">🛡️</span><h3>BayarAman</h3><ul><li>Menahan dana sementara</li><li>Menampilkan status transparan</li><li>Mengelola komplain</li><li>Mencatat audit trail</li></ul></div>
+          <div class="lane"><span class="icon">👩‍⚖️</span><h3>Admin / Finance</h3><ul><li>Verifikasi pembayaran</li><li>Review bukti dispute</li><li>Approve refund/release</li><li>Proses payout seller</li></ul></div>
+        </div>
+      </section>
+
+      <section class="band purple">
+        <div class="head"><span class="num">3</span> MODEL UANG & REVENUE</div>
+        <div class="cards">
+          <div class="card"><span class="icon">💰</span><h3>Transaction Fee</h3><p>2% dari nominal transaksi.</p><span class="money">min 20k / max 100k</span></div>
+          <div class="card"><span class="icon">🙋</span><h3>Fee Payer</h3><p>Buyer pays fee, seller pays fee, atau split fee.</p></div>
+          <div class="card"><span class="icon">🚪</span><h3>Cancel Fee</h3><p>Free user kena Rp5.000 jika batal tanpa seller fault.</p></div>
+          <div class="card"><span class="icon">⭐</span><h3>Pro User</h3><p>Rp100.000/bulan atau Rp1.000.000/tahun.</p></div>
+          <div class="card"><span class="icon">📊</span><h3>Free Limits</h3><p>Max trx 1jt, daily 1.5jt, monthly 3jt.</p></div>
+          <div class="card"><span class="icon">⚖️</span><h3>Pro Guardrail</h3><p>Transaksi &gt;5jt tetap masuk manual review.</p></div>
+        </div>
+      </section>
+
+      <section class="band gold">
+        <div class="head"><span class="num">4</span> DISPUTE & DECISION FLOW</div>
+        <div class="roadmap">
+          <div class="step"><span class="badge">1</span><span class="icon">⚠️</span><h3>Buyer Komplain</h3><p>Alasan, kronologi, bukti, solusi diminta.</p></div>
+          <div class="step"><span class="badge">2</span><span class="icon">🧾</span><h3>Bukti Dikumpulkan</h3><p>Chat, foto/video barang, resi, link/file, screenshot.</p></div>
+          <div class="step"><span class="badge">3</span><span class="icon">🏪</span><h3>Seller Response</h3><p>Seller punya window respons 2x24 jam.</p></div>
+          <div class="step"><span class="badge">4</span><span class="icon">👩‍⚖️</span><h3>Admin Review</h3><p>Admin menilai bukti dan histori transaksi.</p></div>
+          <div class="step"><span class="badge">5</span><span class="icon">↩️</span><h3>Refund</h3><p>Dana dikembalikan ke buyer jika seller salah/fraud.</p></div>
+          <div class="step"><span class="badge">6</span><span class="icon">💸</span><h3>Release</h3><p>Dana diteruskan ke seller jika delivery valid.</p></div>
+          <div class="step"><span class="badge">7</span><span class="icon">🤝</span><h3>Split</h3><p>Dana dibagi jika kasusnya parsial/negosiasi.</p></div>
+          <div class="step"><span class="badge">8</span><span class="icon">🔒</span><h3>Freeze</h3><p>Transaksi ditahan jika ada risk flag.</p></div>
+        </div>
+        <div class="target">⚖️ Semua keputusan admin wajib punya alasan dan masuk audit trail agar proses dispute bisa dipertanggungjawabkan.</div>
+      </section>
+
+      <section class="band red">
+        <div class="head"><span class="num">5</span> RISIKO BISNIS & KONTROL</div>
+        <div class="cards">
+          <div class="card"><span class="icon">🕵️</span><h3>Fraud</h3><p>Fake payment, fake proof, barang palsu, collusion.</p></div>
+          <div class="card"><span class="icon">🐢</span><h3>Operasional Lambat</h3><p>Verifikasi, refund, dan payout manual bisa jadi bottleneck.</p></div>
+          <div class="card"><span class="icon">📉</span><h3>Dispute Tinggi</h3><p>Evidence lemah akan menaikkan beban admin.</p></div>
+          <div class="card"><span class="icon">⚖️</span><h3>Compliance</h3><p>Menahan dana user perlu policy dan pencatatan ketat.</p></div>
+          <div class="card"><span class="icon">🚫</span><h3>Forbidden Items</h3><p>Barang ilegal, judi, crypto, pinjaman, data pribadi ditolak.</p></div>
+          <div class="card"><span class="icon">🔎</span><h3>Manual Review</h3><p>High-risk category, nominal besar, user mencurigakan.</p></div>
+        </div>
+      </section>
+
+      <div class="split">
+        <section class="goal">
+          <div class="targeticon">🎯</div>
+          <div>
+            <h2>Goal Validasi Bisnis</h2>
+            <div class="checks">
+              <div class="check">Seller mau share link</div><div class="check">Buyer percaya bayar duluan</div>
+              <div class="check">Mayoritas transaksi selesai</div><div class="check">Fee model masuk akal</div>
+              <div class="check">Dispute manageable</div><div class="check">Fraud bisa dikontrol</div>
+            </div>
+          </div>
+        </section>
+        <section class="next">
+          <h2>🚀 Setelah Flow Bisnis Terbukti</h2>
+          <p>Naikkan automation pembayaran, payout, risk scoring, KYC, reputation badge, dan API komunitas. Tapi validasi awalnya tetap: trust flow harus dipahami dan dipakai user.</p>
+        </section>
+      </div>
+      <div class="footer">⭐ Bisnis Flow BayarAman: buat transaksi, amankan dana, kumpulkan bukti, selesaikan transaksi, lalu release atau refund secara fair.</div>
+    </div>
+  </main>
+</body>
+</html>
