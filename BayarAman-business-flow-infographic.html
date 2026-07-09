@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BayarAman - Business Flow Infographic</title>
+  <style>
+    :root{
+      --navy:#061a33;--navy2:#0b2b55;--blue:#0b63ce;--cyan:#13b7d8;--teal:#008f85;
+      --green:#16a34a;--yellow:#ffd84d;--orange:#f59e0b;--red:#ef4444;--purple:#6d5dfc;
+      --ink:#0f2744;--muted:#53667f;--line:#a9c5e8;--paper:#f8fcff;--white:#fff;
+      --shadow:0 16px 36px rgba(7,34,69,.18);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:#eaf5ff;font-family:Inter,Arial,Helvetica,sans-serif;color:var(--ink)}
+    .poster{width:1180px;max-width:100%;margin:0 auto;background:linear-gradient(180deg,#ffffff 0%,#eef8ff 100%);border:10px solid #fff;border-radius:34px;overflow:hidden;box-shadow:var(--shadow)}
+    .hero{position:relative;background:radial-gradient(circle at 15% 20%,#174d91 0,#061a33 42%,#020b18 100%);color:#fff;padding:22px 34px 26px;min-height:185px}
+    h1{margin:0;text-align:center;font-size:42px;line-height:1.05;letter-spacing:0;text-shadow:0 3px 0 rgba(0,0,0,.28)}
+    .focus{width:max-content;max-width:100%;margin:14px auto 10px;padding:9px 28px;border:4px solid var(--yellow);border-radius:16px;color:var(--yellow);font-size:34px;font-weight:950;background:rgba(3,18,40,.68);box-shadow:0 0 0 2px rgba(255,255,255,.14) inset}
+    .note{display:flex;gap:12px;align-items:center;width:700px;max-width:100%;margin:0 auto;padding:13px 18px;border:1px solid rgba(255,255,255,.55);border-radius:14px;background:rgba(255,255,255,.08);font-size:18px;font-weight:800;line-height:1.35}
+    .hero-icons{position:absolute;inset:0;pointer-events:none}
+    .bigicon{position:absolute;font-size:62px;filter:drop-shadow(0 6px 2px rgba(0,0,0,.28))}
+    .i1{left:28px;top:36px}.i2{right:36px;top:32px}.i3{right:170px;bottom:20px}.i4{left:165px;bottom:28px}
+    .content{padding:18px 26px 26px}
+    .band{margin-top:18px;border:2px solid var(--line);border-radius:20px;background:linear-gradient(180deg,#fff,#f3fbff);box-shadow:0 7px 18px rgba(28,91,156,.08);overflow:hidden}
+    .band-head{display:flex;align-items:center;gap:10px;width:max-content;max-width:100%;height:46px;padding:0 22px 0 10px;border-radius:0 18px 18px 0;color:#fff;font-size:22px;font-weight:950;background:linear-gradient(90deg,var(--blue),#004ca6)}
+    .num{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#053c8f;color:#fff;border:3px solid #9ec5ff;font-size:22px;font-weight:950;box-shadow:0 3px 0 rgba(0,0,0,.2)}
+    .band.teal .band-head{background:linear-gradient(90deg,#00796f,#00a99a)}.band.purple .band-head{background:linear-gradient(90deg,#4031ad,#6d5dfc)}.band.gold .band-head{background:linear-gradient(90deg,#b46900,#f59e0b)}
+    .roadmap{display:grid;grid-template-columns:repeat(8,1fr);gap:14px;padding:16px 18px 12px}
+    .step{position:relative;min-height:178px;padding:12px 10px;border:2px solid #9fc3ed;border-radius:10px;background:linear-gradient(180deg,#fff,#f4fbff);text-align:center}
+    .step:not(:last-child)::after{content:"";position:absolute;right:-18px;top:80px;border-left:18px solid var(--blue);border-top:13px solid transparent;border-bottom:13px solid transparent;z-index:3}
+    .badge{position:absolute;left:9px;top:8px;display:grid;place-items:center;width:33px;height:33px;border-radius:50%;background:#0754b7;color:#fff;font-size:20px;font-weight:950}
+    .icon{display:block;margin:28px auto 8px;font-size:43px;line-height:1}
+    .step h3{margin:0;font-size:15px;line-height:1.14}.step p{margin:7px 0 0;color:#233a55;font-size:12px;font-weight:700;line-height:1.28}
+    .code{display:inline-block;margin-top:8px;padding:7px 8px;border-radius:7px;background:#061a33;color:#8dfaa6;font-family:ui-monospace,Menlo,monospace;font-size:12px;text-align:left}
+    .target{display:flex;align-items:center;justify-content:center;gap:10px;margin:0 18px 16px;padding:11px;border:2px solid #2483df;border-radius:10px;background:#f7fcff;color:#0a3262;font-size:17px;font-weight:950}
+    .arch{display:grid;grid-template-columns:1fr 70px 1.1fr 70px 1fr;gap:12px;align-items:center;padding:22px 30px 16px}
+    .node{min-height:172px;padding:18px;border:2px dashed #2e7de1;border-radius:18px;background:rgba(255,255,255,.82);text-align:center}
+    .node.main{border-style:solid;background:#f6fffe}.node .icon{margin:0 0 10px;font-size:56px}.node h3{margin:0;font-size:24px}.node p{margin:8px 0 0;color:var(--muted);font-size:15px;font-weight:750}.arrow{font-size:48px;text-align:center;color:#09244a;font-weight:950}.arrow span{display:block;font-size:14px;color:#09244a}
+    .techstrip{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;padding:15px 18px 18px}
+    .tech{min-height:142px;padding:12px;border:2px solid #b3cff0;border-radius:10px;background:#fff;text-align:center}
+    .tech .icon{margin:2px auto 8px;font-size:38px}.tech h3{margin:0;font-size:15px}.tech p{margin:7px 0 0;color:#314964;font-size:12px;font-weight:700;line-height:1.25}
+    .mini-flow{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;padding:15px 18px 18px;align-items:center}
+    .mini{min-height:105px;padding:12px;border:2px solid #a6c5eb;border-radius:10px;background:#fff;text-align:center;font-weight:900}.mini .icon{margin:0 auto 8px;font-size:32px}.mini small{display:block;margin-top:5px;color:var(--muted);font-size:12px;font-weight:750}.small-arrow{text-align:center;font-size:26px;color:#09244a;font-weight:950}
+    .bottom{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-top:18px}
+    .goal{border-radius:18px;border:2px solid #0b63ce;background:linear-gradient(135deg,#061a33,#073f80);color:#fff;padding:18px 20px;display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:center}.goal .targeticon{font-size:88px;text-align:center}.goal h2{margin:0;color:var(--yellow);font-size:24px}.checks{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-top:10px;font-weight:850;font-size:14px}.check::before{content:"✓";display:inline-grid;place-items:center;width:20px;height:20px;margin-right:6px;border-radius:4px;background:#20c56b;color:#fff}
+    .next{border-radius:18px;border:2px solid #538ee6;background:#f6fbff;padding:18px 22px}.next h2{margin:0;color:#1256b1;font-size:25px}.next p{margin:9px 0 0;color:#213d5b;font-size:16px;font-weight:750;line-height:1.35}
+    .footer{margin-top:14px;padding:9px 18px;border-radius:999px;background:#061a33;color:#fff;text-align:center;font-weight:900;letter-spacing:.02em}
+    @media(max-width:900px){.poster{border-radius:0;border:0}.hero{padding:18px}.bigicon{display:none}h1{font-size:31px}.focus{font-size:24px}.roadmap,.techstrip{grid-template-columns:repeat(2,1fr)}.step:not(:last-child)::after{display:none}.arch,.bottom,.goal{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.mini-flow{grid-template-columns:1fr}.small-arrow{transform:rotate(90deg)}}
+  </style>
+</head>
+<body>
+  <main class="poster">
+    <section class="hero">
+      <div class="hero-icons">
+        <span class="bigicon i1">🛡️</span><span class="bigicon i2">💻</span><span class="bigicon i3">🏦</span><span class="bigicon i4">🔗</span>
+      </div>
+      <h1>BayarAman: Rekber Modern di Luar Marketplace</h1>
+      <div class="focus">🎯 Fokus: MVP Manual-First + Trust Flow</div>
+      <div class="note">ℹ️ Buyer bayar ke BayarAman → dana diamankan → seller kirim → buyer konfirmasi → dana diteruskan.</div>
+    </section>
+
+    <div class="content">
+      <section class="band">
+        <div class="band-head"><span class="num">1</span> ROADMAP FLOW BISNIS UTAMA</div>
+        <div class="roadmap">
+          <div class="step"><span class="badge">1</span><span class="icon">🧾</span><h3>Seller Buat Link</h3><p>Nominal, kategori, kesepakatan, deadline, fee payer.</p></div>
+          <div class="step"><span class="badge">2</span><span class="icon">👀</span><h3>Buyer Review</h3><p>Cek detail transaksi, fee, total bayar, policy refund.</p></div>
+          <div class="step"><span class="badge">3</span><span class="icon">🏦</span><h3>Buyer Transfer</h3><p>Transfer manual ke BCA BayarAman.</p><span class="code">klik: Sudah Bayar</span></div>
+          <div class="step"><span class="badge">4</span><span class="icon">🔍</span><h3>Admin Verifikasi</h3><p>Cek mutasi, nominal, rekening, anomali.</p></div>
+          <div class="step"><span class="badge">5</span><span class="icon">🔐</span><h3>Dana Diamankan</h3><p>Seller boleh mulai kirim barang/jasa.</p></div>
+          <div class="step"><span class="badge">6</span><span class="icon">📦</span><h3>Seller Delivery</h3><p>Upload resi, foto paket, file, link, atau screenshot.</p></div>
+          <div class="step"><span class="badge">7</span><span class="icon">✅</span><h3>Buyer Konfirmasi</h3><p>Review window 1x24 jam, bisa confirm atau dispute.</p></div>
+          <div class="step"><span class="badge">8</span><span class="icon">💸</span><h3>Payout Seller</h3><p>Finance transfer manual setelah completed.</p></div>
+        </div>
+        <div class="target">⭐ Target: buyer berani bayar duluan, seller merasa fair, dispute punya jalur bukti yang jelas.</div>
+      </section>
+
+      <section class="band teal">
+        <div class="band-head"><span class="num">2</span> GAMBARAN ARSITEKTUR MVP</div>
+        <div class="arch">
+          <div class="node"><span class="icon">🌐</span><h3>Browser / App</h3><p>Landing page, transaction page, buyer & seller dashboard</p></div>
+          <div class="arrow">➜<span>HTTPS</span></div>
+          <div class="node main"><span class="icon">⚙️</span><h3>BayarAman Backend</h3><p>Auth, state machine, fee engine, dispute, audit log</p></div>
+          <div class="arrow">➜<span>query / queue / file</span></div>
+          <div class="node"><span class="icon">🗄️</span><h3>Data Layer</h3><p>PostgreSQL + object storage + job queue</p></div>
+        </div>
+        <div class="target">💻 Semua proses MVP bisa jalan lokal dulu: web app, database, queue, storage emulator, dan admin console.</div>
+      </section>
+
+      <section class="band purple">
+        <div class="band-head"><span class="num">3</span> TEKNOLOGI YANG DIPAKAI</div>
+        <div class="techstrip">
+          <div class="tech"><span class="icon">▲</span><h3>Next.js</h3><p>Public page, dashboard, admin console, API route.</p></div>
+          <div class="tech"><span class="icon">🟦</span><h3>TypeScript</h3><p>Biar state transaksi dan role tidak gampang kacau.</p></div>
+          <div class="tech"><span class="icon">🐘</span><h3>PostgreSQL</h3><p>Users, transactions, payments, disputes, payouts.</p></div>
+          <div class="tech"><span class="icon">🧬</span><h3>Prisma / Drizzle</h3><p>Schema, migration, query typed.</p></div>
+          <div class="tech"><span class="icon">📮</span><h3>Queue + Cron</h3><p>Expiry 24 jam, reminder, auto-release.</p></div>
+          <div class="tech"><span class="icon">🪣</span><h3>S3 / R2 Storage</h3><p>Bukti resi, foto paket, screenshot dispute.</p></div>
+        </div>
+      </section>
+
+      <section class="band gold">
+        <div class="band-head"><span class="num">4</span> APA YANG DIKERJAKAN SISTEM?</div>
+        <div class="mini-flow">
+          <div class="mini"><span class="icon">🔐</span>Auth & Role<small>buyer, seller, admin, finance</small></div>
+          <div class="small-arrow">➜</div>
+          <div class="mini"><span class="icon">🧮</span>Fee Engine<small>2%, min 20k, max 100k</small></div>
+          <div class="small-arrow">➜</div>
+          <div class="mini"><span class="icon">🚦</span>Status Machine<small>strict transition + freeze</small></div>
+          <div class="small-arrow">➜</div>
+          <div class="mini"><span class="icon">🧾</span>Audit Log<small>semua aksi penting tercatat</small></div>
+        </div>
+        <div class="techstrip">
+          <div class="tech"><span class="icon">🏦</span><h3>Manual Payment</h3><p>Buyer klik Sudah Bayar, finance cek mutasi BCA.</p></div>
+          <div class="tech"><span class="icon">⚠️</span><h3>Dispute</h3><p>Buyer isi kronologi, seller jawab, admin putuskan.</p></div>
+          <div class="tech"><span class="icon">⏱️</span><h3>Auto Release</h3><p>1x24 jam setelah delivery proof jika tidak ada dispute.</p></div>
+          <div class="tech"><span class="icon">💳</span><h3>Manual Payout</h3><p>&lt;=1jt single admin, &gt;1jt maker-checker.</p></div>
+          <div class="tech"><span class="icon">🚫</span><h3>Risk Guard</h3><p>High-risk, anomali, suspicious proof bisa difreeze.</p></div>
+          <div class="tech"><span class="icon">🔔</span><h3>Notification</h3><p>Email/WA/in-app untuk status dan SLA.</p></div>
+        </div>
+      </section>
+
+      <div class="bottom">
+        <section class="goal">
+          <div class="targeticon">🎯</div>
+          <div>
+            <h2>Goal MVP Pertama</h2>
+            <div class="checks">
+              <div class="check">Seller bisa buat link</div><div class="check">Buyer bisa bayar manual</div>
+              <div class="check">Admin verify payment</div><div class="check">Seller upload bukti</div>
+              <div class="check">Buyer confirm/dispute</div><div class="check">Payout & audit jalan</div>
+            </div>
+          </div>
+        </section>
+        <section class="next">
+          <h2>🚀 Next Phase Setelah Validasi</h2>
+          <p>Virtual account, QRIS, mutation automation, auto payout, KYC provider, reputation scoring, API komunitas, dan mobile app.</p>
+        </section>
+      </div>
+      <div class="footer">⭐ Rencana singkat, visual, dan fokus: bangun trust flow dulu, automation belakangan.</div>
+    </div>
+  </main>
+</body>
+</html>
