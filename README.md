@@ -8,6 +8,8 @@ This repo currently contains product planning artifacts:
 
 - `PRD.md`: Product Requirements Document for BayarAman MVP.
 - `TRD.md`: Technical Requirements Document based on the PRD and Midtrans integration plan, including Mermaid flowcharts and sequence diagrams.
+- `AUTH.md`: Auth, role, tier, verification, and permission design.
+- `DATABASE.md`: PostgreSQL database design for auth, transactions, Midtrans, disputes, refunds, payouts, audit, and notifications.
 - `requirenment/`: Original exported product, journey, PRD, and business model drafts.
 - `BayarAman-bisnis-flow-infographic.html`: Business-flow infographic source.
 - `BayarAman-bisnis-flow-infographic.png`: Business-flow infographic image.
@@ -79,10 +81,12 @@ Start here:
 
 1. `PRD.md`
 2. `TRD.md`
-3. `BayarAman-bisnis-flow-infographic.png`
-4. `BayarAman-midtrans-tech-flow-infographic.png`
-5. `requirenment/BayarAman — Product Concept (Draft).md`
-6. `requirenment/BayarAman — User Journey Blueprint v2 (Draft).md`
+3. `AUTH.md`
+4. `DATABASE.md`
+5. `BayarAman-bisnis-flow-infographic.png`
+6. `BayarAman-midtrans-tech-flow-infographic.png`
+7. `requirenment/BayarAman — Product Concept (Draft).md`
+8. `requirenment/BayarAman — User Journey Blueprint v2 (Draft).md`
 
 Note: Some source files use long Notion-exported filenames.
 
