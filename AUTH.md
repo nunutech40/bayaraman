@@ -37,7 +37,7 @@ Can:
 
 - Membuat transaksi sebagai seller atau buyer.
 - Membuka transaksi sebagai buyer atau seller dari link.
-- Menerima/memverifikasi transaksi jika menjadi seller pada buyer-created flow.
+- Menjadi seller pada buyer-created flow berdasarkan data seller yang dimasukkan buyer.
 - Membayar ke rekening BayarAman dan klik `Sudah Bayar` jika menjadi buyer.
 - Mengisi data payout jika menjadi seller.
 - Konfirmasi penyelesaian transaksi via confirmation link + OTP jika menjadi buyer.
@@ -185,7 +185,6 @@ Manual verification may be requested if:
 | Open transaction link | Limited | Yes | Yes | Yes | Yes | Yes | Yes |
 | Create transaction | No | Yes | Yes | Yes | No* | No* | Yes |
 | Pay to BayarAman account + click Sudah Bayar | No | Yes | Yes | No | No | No | No |
-| Accept buyer-created transaction | No | No | No | Yes | No | No | No |
 | Confirm completion with OTP | No | No | Yes | No | No | No | No |
 | Record WA group | No | No | No | No | Yes | No | Yes |
 | Review manual payment | No | No | No | No | Yes | Yes | Yes |
@@ -257,7 +256,6 @@ Allowed if:
 - User is logged in.
 - Email and phone verified.
 - User is buyer or can claim buyer role for unclaimed transaction link.
-- Seller has accepted buyer-created transaction when applicable.
 - Transaction status is `WAITING_BUYER_PAYMENT`.
 - Transaction has not expired.
 - Buyer identity is locked before or when `Sudah Bayar` is submitted.
@@ -271,17 +269,7 @@ Allowed if:
 - OTP is valid, not expired, and attempt limit is not exceeded.
 - Transaction status is `WAITING_BUYER_CONFIRMATION`.
 
-### 7.4 Seller Acceptance
-
-Allowed if:
-
-- User is logged in.
-- Email and phone verified.
-- User is the invited seller or can claim seller role.
-- Seller verifies payout bank account before transaction moves to buyer payment.
-- Transaction status is `WAITING_SELLER_ACCEPTANCE`.
-
-### 7.5 Operator Payment Review
+### 7.4 Operator Payment Review
 
 Allowed if:
 
@@ -291,7 +279,7 @@ Allowed if:
 - Expected amount validation passes before changing transaction status.
 - Non-confirmed result includes an operator note.
 
-### 7.6 WA Group Record
+### 7.5 WA Group Record
 
 Allowed if:
 
@@ -299,7 +287,7 @@ Allowed if:
 - Transaction status is `PAYMENT_CONFIRMED`.
 - Group name or group URL is provided.
 
-### 7.7 Outcome Recording
+### 7.6 Outcome Recording
 
 Allowed if:
 
@@ -308,7 +296,7 @@ Allowed if:
 - Outcome is one of release, refund, split, or cancelled.
 - Non-release outcome includes a reason/note.
 
-### 7.8 Payout Processing
+### 7.7 Payout Processing
 
 Allowed if:
 
@@ -337,7 +325,7 @@ stateDiagram-v2
 Seller role:
 
 - Assigned when verified user creates transaction as seller.
-- Assigned when seller accepts buyer-created transaction.
+- Assigned from seller data entered by buyer in buyer-created transaction.
 
 Buyer role:
 

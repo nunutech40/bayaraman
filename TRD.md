@@ -104,11 +104,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   B[Buyer creates transaction] --> A[Buyer enters deal detail, seller contact, seller bank]
-  A --> C[System creates seller acceptance link]
-  C --> D[Seller opens link and logs in/verifies]
-  D --> E{Seller accepts and verifies bank?}
-  E -->|No| X[Transaction cancelled/revised]
-  E -->|Yes| F[System shows BayarAman bank payment instruction]
+  A --> F[System shows BayarAman bank payment instruction]
   F --> G[Buyer pays to BayarAman bank account]
   G --> H[Buyer clicks Sudah Bayar]
   H --> I[Admin checks incoming payment]
@@ -186,7 +182,7 @@ sequenceDiagram
   API->>DB: Store wa_group_url, wa_group_created_at
   Operator->>WA: Announce payment received
   Web->>API: POST /api/ops/transactions/:id/payment-announcement
-  API->>DB: Set status WA_GROUP_CREATED / IN_FULFILLMENT
+  API->>DB: Set status PAYMENT_ANNOUNCED after operator announcement
   Seller->>WA: Send shipping/progress info
   Buyer->>WA: Confirms item/service completion verbally
 ```
@@ -243,10 +239,7 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
   [*] --> DRAFT
-  DRAFT --> WAITING_SELLER_ACCEPTANCE
   DRAFT --> WAITING_BUYER_PAYMENT
-  WAITING_SELLER_ACCEPTANCE --> WAITING_BUYER_PAYMENT
-  WAITING_SELLER_ACCEPTANCE --> CANCELLED
   WAITING_BUYER_PAYMENT --> PAYMENT_UNDER_REVIEW
   WAITING_BUYER_PAYMENT --> PAYMENT_EXPIRED
   PAYMENT_UNDER_REVIEW --> PAYMENT_CONFIRMED
@@ -254,9 +247,10 @@ stateDiagram-v2
   PAYMENT_UNDER_REVIEW --> PAYMENT_INVALID
   PAYMENT_UNDER_REVIEW --> MANUAL_REVIEW
   PAYMENT_CONFIRMED --> WA_GROUP_CREATED
-  WA_GROUP_CREATED --> IN_FULFILLMENT
-  IN_FULFILLMENT --> WAITING_BUYER_CONFIRMATION
-  IN_FULFILLMENT --> ISSUE_REPORTED
+  WA_GROUP_CREATED --> PAYMENT_ANNOUNCED
+  PAYMENT_ANNOUNCED --> SELLER_SHIPPED
+  SELLER_SHIPPED --> WAITING_BUYER_CONFIRMATION
+  SELLER_SHIPPED --> ISSUE_REPORTED
   ISSUE_REPORTED --> MANUAL_REVIEW
   MANUAL_REVIEW --> WAITING_BUYER_CONFIRMATION
   MANUAL_REVIEW --> REFUND_PENDING
@@ -289,7 +283,7 @@ stateDiagram-v2
 - Create seller-created transaction.
 - Create buyer-created transaction.
 - Generate transaction code/link.
-- Require seller acceptance for buyer-created transaction.
+- Store seller contact and seller payout bank for buyer-created transaction.
 - Store seller payout bank account.
 - Set payment expiry to 1x24 hours after transaction becomes payable.
 - Enforce state transitions.
@@ -338,7 +332,6 @@ User-facing:
 - `POST /api/auth/login`
 - `GET /api/transactions/:code`
 - `POST /api/transactions`
-- `POST /api/transactions/:id/seller-acceptance`
 - `POST /api/transactions/:id/payment-claim`
 - `POST /api/confirmations/:token/request-otp`
 - `POST /api/confirmations/:token/verify`
@@ -372,7 +365,7 @@ Scheduled jobs:
 | PRD Need | TRD Implementation |
 | --- | --- |
 | Seller creates transaction | Transaction module, transaction link |
-| Buyer creates transaction | Transaction module, seller acceptance flow |
+| Buyer creates transaction | Transaction module, seller contact and bank input |
 | Buyer pays to BayarAman account | Manual payment instruction |
 | Buyer clicks Sudah Bayar | Payment claim endpoint |
 | Admin checks incoming payment | Payment review ops endpoint |

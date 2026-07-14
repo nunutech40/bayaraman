@@ -37,7 +37,7 @@ Transactions that have not been paid expire in 1x24 hours.
 Included in MVP:
 
 - Seller-created transaction.
-- Buyer-created transaction with seller bank account input and seller acceptance/verification where needed.
+- Buyer-created transaction with seller contact and seller bank account input.
 - Manual buyer payment to BayarAman bank account.
 - `Sudah Bayar` action by buyer.
 - Admin manual payment checking.

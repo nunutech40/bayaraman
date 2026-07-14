@@ -39,7 +39,7 @@ BayarAman is a trust layer:
 | Area | Decision |
 | --- | --- |
 | Seller-created transaction | Included |
-| Buyer-created transaction | Included with seller bank account input and seller acceptance/verification where needed |
+| Buyer-created transaction | Included with seller contact and seller bank account input |
 | Manual buyer payment to BayarAman account | Included |
 | Buyer `Sudah Bayar` action | Included |
 | Admin manual payment checking | Included |
@@ -157,11 +157,8 @@ flowchart TD
 flowchart TD
   A[Buyer creates transaction] --> B[Buyer enters deal detail and seller contact]
   B --> C[Buyer enters seller bank account]
-  C --> D[System creates seller acceptance link]
-  D --> E[Seller reviews detail and verifies bank account]
-  E --> F{Seller accepts?}
-  F -->|No| X[Transaction cancelled/revised]
-  F -->|Yes| G[Buyer pays to BayarAman bank account]
+  C --> D[System creates transaction]
+  D --> G[Buyer pays to BayarAman bank account]
   G --> H[Buyer clicks Sudah Bayar]
   H --> I[Admin checks incoming payment]
   I --> J{Payment valid?}
@@ -262,7 +259,7 @@ flowchart LR
 - Seller can create transaction.
 - Buyer can create transaction.
 - Seller-created transaction can be shared directly to buyer.
-- Buyer-created transaction requires seller acceptance before payment.
+- Buyer-created transaction stores seller contact and seller bank account before payment.
 - System stores title, amount, category, agreement, buyer/seller contact, fee payer, and seller payout bank account.
 - Transaction gets a payment expiry timestamp 1x24 hours after it becomes payable.
 
@@ -300,12 +297,12 @@ flowchart LR
 
 ```text
 DRAFT
--> WAITING_SELLER_ACCEPTANCE (buyer-created only)
 -> WAITING_BUYER_PAYMENT
 -> PAYMENT_UNDER_REVIEW
 -> PAYMENT_CONFIRMED
 -> WA_GROUP_CREATED
--> IN_FULFILLMENT
+-> PAYMENT_ANNOUNCED
+-> SELLER_SHIPPED
 -> WAITING_BUYER_CONFIRMATION
 -> BUYER_CONFIRMED
 -> PAYOUT_PENDING
@@ -320,7 +317,7 @@ WAITING_BUYER_PAYMENT -> PAYMENT_EXPIRED
 PAYMENT_UNDER_REVIEW -> WAITING_BUYER_PAYMENT
 PAYMENT_UNDER_REVIEW -> PAYMENT_INVALID
 PAYMENT_UNDER_REVIEW -> MANUAL_REVIEW
-IN_FULFILLMENT -> ISSUE_REPORTED -> MANUAL_REVIEW
+SELLER_SHIPPED -> ISSUE_REPORTED -> MANUAL_REVIEW
 MANUAL_REVIEW -> WAITING_BUYER_CONFIRMATION
 MANUAL_REVIEW -> REFUND_PENDING -> REFUNDED
 MANUAL_REVIEW -> SPLIT_SETTLEMENT
@@ -334,7 +331,7 @@ User-facing MVP:
 - Landing page.
 - Register/login.
 - Create transaction page.
-- Seller acceptance page for buyer-created transaction.
+- Buyer-created transaction page.
 - Transaction detail page.
 - Manual payment instruction page.
 - `Sudah Bayar` action/status page.

@@ -107,7 +107,6 @@ transaction_creator_role:
 
 transaction_status:
   DRAFT
-  WAITING_SELLER_ACCEPTANCE
   WAITING_BUYER_PAYMENT
   PAYMENT_UNDER_REVIEW
   PAYMENT_CONFIRMED
@@ -115,7 +114,8 @@ transaction_status:
   PAYMENT_INVALID
   PAYMENT_EXPIRED
   WA_GROUP_CREATED
-  IN_FULFILLMENT
+  PAYMENT_ANNOUNCED
+  SELLER_SHIPPED
   ISSUE_REPORTED
   MANUAL_REVIEW
   WAITING_BUYER_CONFIRMATION
@@ -243,7 +243,6 @@ Store hashes only:
 | fee_payer | text | `BUYER`, `SELLER`, `SPLIT` |
 | status | text | transaction status enum |
 | payment_expires_at | timestamptz nullable | 1x24 hours after transaction becomes payable |
-| seller_accepted_at | timestamptz nullable | required for buyer-created transaction |
 | payment_claimed_at | timestamptz nullable | buyer clicked `Sudah Bayar` |
 | payment_confirmed_at | timestamptz nullable | admin-confirmed payment |
 | buyer_confirmed_at | timestamptz nullable | OTP-confirmed completion |
@@ -265,7 +264,6 @@ Store hashes only:
 | bank_name_snapshot | text nullable | seller payout bank |
 | bank_account_number_snapshot | text nullable | encrypted/masked where needed |
 | bank_account_holder_snapshot | text nullable | |
-| accepted_at | timestamptz nullable | seller acceptance for buyer-created flow |
 | created_at | timestamptz | |
 
 Unique:
