@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BayarAman Role Flow Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">BA</div>
+          <div>
+            <strong>BayarAman</strong>
+            <span>Role Flow Prototype</span>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="Prototype sections">
+          <button class="nav-item active" data-view="seller">Halaman Penjual</button>
+          <button class="nav-item" data-view="buyerCreate">Halaman Pembeli</button>
+          <button class="nav-item" data-view="payment">Halaman Bayar</button>
+          <button class="nav-item" data-view="admin">Operasional Manual</button>
+          <button class="nav-item" data-view="confirm">Konfirmasi OTP</button>
+        </nav>
+
+        <div class="status-card">
+          <span class="eyebrow">Status transaksi</span>
+          <strong id="sideStatus">DRAFT</strong>
+          <p id="sideHint">Mulai dari aktor yang meng-input transaksi.</p>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">Prototype flow manual rekber</span>
+            <h1>Penjual, Pembeli, Admin</h1>
+          </div>
+          <div class="top-actions">
+            <button class="help-button" id="helpBtn">Help / Tutorial</button>
+            <div class="timer">
+              <span>Batas bayar</span>
+              <strong id="expiryLabel">1x24 jam</strong>
+            </div>
+          </div>
+        </header>
+
+        <section class="flow-strip" aria-label="Transaction timeline">
+          <div class="flow-step active" data-step="input">Input</div>
+          <div class="flow-step" data-step="pay">Buyer bayar</div>
+          <div class="flow-step" data-step="review">Admin cek</div>
+          <div class="flow-step" data-step="group">Group WA</div>
+          <div class="flow-step" data-step="ship">Seller kirim</div>
+          <div class="flow-step" data-step="otp">OTP buyer</div>
+          <div class="flow-step" data-step="payout">Payout</div>
+        </section>
+
+        <section class="guide-modal" id="guideModal" aria-hidden="true">
+          <div class="guide-backdrop" id="guideBackdrop"></div>
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Panduan terpisah</span>
+                <h2>Aktor, data static, dan kategori manual</h2>
+              </div>
+              <div class="guide-actions">
+                <div class="segmented">
+                  <button class="segment active" data-creator="seller">Penjual input</button>
+                  <button class="segment" data-creator="buyer">Pembeli input</button>
+                </div>
+                <button class="ghost" id="closeGuideBtn">Tutup</button>
+              </div>
+            </div>
+
+            <div class="guide-grid">
+              <article class="actor-card seller">
+                <span class="actor-label">Penjual</span>
+                <h3>Dina Putri</h3>
+                <dl>
+                  <div><dt>Nama</dt><dd>Dina Putri</dd></div>
+                  <div><dt>WhatsApp</dt><dd>0812-2222-3300</dd></div>
+                  <div><dt>Email</dt><dd>dina@example.com</dd></div>
+                  <div><dt>Rekening payout</dt><dd>BCA 1234567890 a.n. Dina Putri</dd></div>
+                </dl>
+                <p id="sellerRoleNote">Penjual mengisi detail transaksi dan rekening payout.</p>
+              </article>
+
+              <article class="actor-card buyer">
+                <span class="actor-label">Pembeli</span>
+                <h3>Raka Pratama</h3>
+                <dl>
+                  <div><dt>Nama</dt><dd>Raka Pratama</dd></div>
+                  <div><dt>WhatsApp</dt><dd>0813-5555-1010</dd></div>
+                  <div><dt>Email</dt><dd>raka@example.com</dd></div>
+                  <div><dt>OTP channel</dt><dd>Email atau WhatsApp</dd></div>
+                </dl>
+                <p id="buyerRoleNote">Pembeli membuka link, transfer ke BayarAman, lalu klik Sudah Bayar.</p>
+              </article>
+
+              <article class="actor-card admin">
+                <span class="actor-label">Admin</span>
+                <h3>Admin BayarAman</h3>
+                <dl>
+                  <div><dt>Operator</dt><dd>Nadia Ops</dd></div>
+                  <div><dt>Rekening terima</dt><dd>BCA 8800123456 a.n. PT BayarAman Indonesia</dd></div>
+                  <div><dt>Tugas utama</dt><dd>Cek pembayaran, buat WA group, kirim link OTP, payout seller</dd></div>
+                </dl>
+                <p>Admin adalah jembatan trust. Komplain buyer-seller diselesaikan di luar sistem.</p>
+              </article>
+
+              <article class="actor-card manual">
+                <span class="actor-label">Operasional manual</span>
+                <h3>Dikerjakan di luar sistem</h3>
+                <ol class="compact-list">
+                  <li>Admin cek pembayaran masuk.</li>
+                  <li>Admin buat group WhatsApp.</li>
+                  <li>Admin info pembayaran masuk di group.</li>
+                  <li>Seller kirim barang.</li>
+                  <li>Seller dan buyer info pesanan selesai.</li>
+                  <li>Admin transfer uang ke seller.</li>
+                </ol>
+              </article>
+            </div>
+
+            <div class="data-matrix">
+              <div>
+                <span class="eyebrow">Data transaksi</span>
+                <h3>Static sample</h3>
+              </div>
+              <div class="matrix-grid">
+                <div><span>Barang/jasa</span><strong>iPhone 13 128GB fullset</strong></div>
+                <div><span>Nominal</span><strong>Rp6.500.000</strong></div>
+                <div><span>Fee</span><strong>Rp100.000</strong></div>
+                <div><span>Total bayar</span><strong>Rp6.600.000</strong></div>
+                <div><span>Batas bayar</span><strong>1x24 jam</strong></div>
+                <div><span>Catatan</span><strong>Komplain diselesaikan via WA group</strong></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view active" id="view-seller">
+          <div class="panel wide">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Halaman penjual</span>
+                <h2>Penjual membuat transaksi</h2>
+              </div>
+              <span class="badge">PENJUAL INPUT</span>
+            </div>
+
+            <div class="form-grid">
+              <label>
+                Judul transaksi
+                <input id="titleInput" value="iPhone 13 128GB fullset" />
+              </label>
+              <label>
+                Nominal barang/jasa
+                <input id="amountInput" value="6500000" inputmode="numeric" />
+              </label>
+              <label>
+                Nama pembeli
+                <input id="buyerNameInput" value="Raka Pratama" />
+              </label>
+              <label>
+                WhatsApp pembeli
+                <input id="buyerPhoneInput" value="0813-5555-1010" />
+              </label>
+              <label>
+                Email pembeli
+                <input id="buyerEmailInput" value="raka@example.com" />
+              </label>
+              <label>
+                Nama penjual
+                <input id="sellerNameInput" value="Dina Putri" />
+              </label>
+              <label>
+                WhatsApp penjual
+                <input id="sellerPhoneInput" value="0812-2222-3300" />
+              </label>
+              <label>
+                Rekening penjual
+                <input id="sellerBankInput" value="BCA 1234567890 a.n. Dina Putri" />
+              </label>
+              <label class="full">
+                Kesepakatan transaksi
+                <textarea id="dealInput">Barang dikirim setelah admin BayarAman mengonfirmasi pembayaran masuk di group WhatsApp. Seller dan buyer memberi info di group saat pesanan selesai.</textarea>
+              </label>
+            </div>
+
+            <div class="actions">
+              <button class="primary" id="sellerCreateBtn">Buat transaksi</button>
+              <button class="ghost" id="resetBtn">Reset</button>
+            </div>
+            <div class="note-box" id="sellerCreateNote">Setelah dibuat, penjual share link transaksi ke pembeli. Pembeli bayar di step berikutnya.</div>
+          </div>
+
+          <div class="panel">
+            <span class="eyebrow">Yang wajib diisi</span>
+            <div class="checklist">
+              <div>Data transaksi: judul, nominal, kesepakatan.</div>
+              <div>Data penjual: nama, WhatsApp, rekening payout.</div>
+              <div>Data pembeli: nama, WhatsApp/email untuk share link dan OTP.</div>
+              <div>Setelah transaksi dibuat, status menjadi menunggu buyer bayar.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-buyerCreate">
+          <div class="panel wide">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Halaman pembeli</span>
+                <h2>Pembeli membuat transaksi</h2>
+              </div>
+              <span class="badge">PEMBELI INPUT</span>
+            </div>
+
+            <div class="form-grid">
+              <label>
+                Judul transaksi
+                <input id="buyerTitleInput" value="iPhone 13 128GB fullset" />
+              </label>
+              <label>
+                Nominal barang/jasa
+                <input id="buyerAmountInput" value="6500000" inputmode="numeric" />
+              </label>
+              <label>
+                Nama pembeli
+                <input id="buyerCreateNameInput" value="Raka Pratama" />
+              </label>
+              <label>
+                WhatsApp pembeli
+                <input id="buyerCreatePhoneInput" value="0813-5555-1010" />
+              </label>
+              <label>
+                Email pembeli
+                <input id="buyerCreateEmailInput" value="raka@example.com" />
+              </label>
+              <label>
+                Nama penjual
+                <input id="buyerSellerNameInput" value="Dina Putri" />
+              </label>
+              <label>
+                WhatsApp penjual
+                <input id="buyerSellerPhoneInput" value="0812-2222-3300" />
+              </label>
+              <label>
+                Rekening penjual
+                <input id="buyerSellerBankInput" value="BCA 1234567890 a.n. Dina Putri" />
+              </label>
+              <label class="full">
+                Kesepakatan transaksi
+                <textarea id="buyerDealInput">Buyer membuat transaksi dan memasukkan rekening seller. Setelah transaksi dibuat, buyer bayar ke rekening BayarAman lalu klik Sudah Bayar.</textarea>
+              </label>
+            </div>
+
+            <div class="actions">
+              <button class="primary" id="buyerCreateBtn">Buat transaksi</button>
+              <button class="ghost" id="resetBtn2">Reset</button>
+            </div>
+            <div class="note-box">Setelah dibuat, buyer lanjut ke halaman bayar. Komplain buyer-seller tetap diselesaikan di luar sistem.</div>
+          </div>
+
+          <div class="panel">
+            <span class="eyebrow">Yang wajib diisi</span>
+            <div class="checklist">
+              <div>Data transaksi: judul, nominal, kesepakatan.</div>
+              <div>Data pembeli: nama, WhatsApp, email.</div>
+              <div>Data penjual: nama, WhatsApp, rekening payout seller.</div>
+              <div>Buyer tetap harus bayar ke rekening BayarAman, bukan langsung ke seller.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-payment">
+          <div class="panel wide">
+            <div class="transaction-head">
+              <div>
+                <span class="eyebrow">Halaman bayar buyer</span>
+                <h2 id="transactionTitle">Belum ada transaksi</h2>
+                <p id="transactionMeta">Buyer melihat detail lalu membayar ke rekening BayarAman.</p>
+              </div>
+              <span class="badge" id="statusBadge">DRAFT</span>
+            </div>
+
+            <div class="summary-grid">
+              <div><span>Nominal transaksi</span><strong id="amountLabel">Rp0</strong></div>
+              <div><span>Fee BayarAman</span><strong id="feeLabel">Rp0</strong></div>
+              <div><span>Total bayar buyer</span><strong id="totalLabel">Rp0</strong></div>
+            </div>
+
+            <div class="payment-box">
+              <div>
+                <span class="eyebrow">Transfer buyer ke BayarAman</span>
+                <h3>BCA 8800123456 a.n. PT BayarAman Indonesia</h3>
+                <p>Setelah transfer, buyer klik `Sudah Bayar`. Status belum confirmed sampai admin cek rekening.</p>
+              </div>
+              <button class="primary" id="paidBtn">Sudah Bayar</button>
+            </div>
+
+            <div class="note-box" id="transactionNote">Menunggu transaksi dibuat.</div>
+          </div>
+
+          <div class="panel">
+            <span class="eyebrow">Ringkasan pihak</span>
+            <div class="mini-list">
+              <div><span>Pembeli</span><strong id="buyerLabel">-</strong></div>
+              <div><span>Penjual</span><strong id="sellerLabel">-</strong></div>
+              <div><span>Rekening penjual</span><strong id="sellerBankLabel">-</strong></div>
+              <div><span>Kesepakatan</span><strong id="dealLabel">-</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-admin">
+          <div class="panel wide">
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">Operasional manual</span>
+                <h2>Cek payment, WA group, pengiriman, OTP, payout</h2>
+              </div>
+              <span class="badge subtle" id="adminQueue">DRAFT</span>
+            </div>
+
+            <div class="manual-banner">
+              Semua proses di halaman ini sifatnya manual dan terjadi di luar sistem utama. Prototype hanya mencatat statusnya supaya alur kelihatan.
+            </div>
+
+            <div class="ops-grid">
+              <div class="ops-card">
+                <span class="eyebrow">1. Payment review</span>
+                <h3>Cek dana masuk</h3>
+                <p>Trigger: buyer klik `Sudah Bayar`. Admin cek rekening BayarAman, lalu tandai valid atau belum ditemukan.</p>
+                <button class="primary" id="confirmPaymentBtn">Pembayaran masuk</button>
+                <button class="ghost" id="paymentNotFoundBtn">Belum ditemukan</button>
+              </div>
+              <div class="ops-card">
+                <span class="eyebrow">2. WhatsApp group</span>
+                <h3>Buat room trust</h3>
+                <p>Admin buat group buyer + seller + BayarAman, lalu info bahwa pembayaran sudah masuk.</p>
+                <button class="primary" id="waBtn">Group WA dibuat</button>
+                <button class="ghost" id="announceBtn">Info pembayaran masuk</button>
+              </div>
+              <div class="ops-card">
+                <span class="eyebrow">3. Pesanan</span>
+                <h3>Seller kirim barang</h3>
+                <p>Seller mengirim barang. Seller dan buyer memberi info di group ketika pesanan selesai.</p>
+                <button class="primary" id="shippedBtn">Seller sudah kirim</button>
+                <button class="ghost" id="completeBtn">Pesanan selesai</button>
+              </div>
+              <div class="ops-card">
+                <span class="eyebrow">4. Payout</span>
+                <h3>OTP buyer lalu transfer seller</h3>
+                <p>Admin kirim link konfirmasi. Buyer OTP. Setelah valid, admin transfer ke rekening seller.</p>
+                <button class="primary" id="sendConfirmBtn">Kirim link konfirmasi</button>
+                <button class="ghost" id="payoutBtn">Transfer seller</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <span class="eyebrow">Activity log</span>
+            <div class="activity-log" id="activityLog"></div>
+          </div>
+        </section>
+
+        <section class="view" id="view-confirm">
+          <div class="panel confirm-panel">
+            <span class="eyebrow">Link dibuka buyer</span>
+            <h2>Konfirmasi pesanan selesai</h2>
+            <p>OTP dikirim ke email atau WhatsApp buyer. Prototype pakai kode static <strong>123456</strong>.</p>
+
+            <div class="channel-row">
+              <button class="channel active" data-channel="email">Email buyer</button>
+              <button class="channel" data-channel="whatsapp">WhatsApp buyer</button>
+            </div>
+
+            <label>
+              Kode OTP
+              <input id="otpInput" placeholder="123456" inputmode="numeric" />
+            </label>
+
+            <div class="actions">
+              <button class="primary" id="verifyOtpBtn">Verifikasi OTP</button>
+            </div>
+            <div class="note-box" id="otpNote">Menunggu admin mengirim link konfirmasi.</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,64 +1,76 @@
 # BayarAman
 
-BayarAman is a rekber-style trust layer for online transactions outside marketplaces. It helps buyers and sellers make safer deals through one central transaction page where the agreement, payment status, delivery proof, dispute, admin decision, and payout status are tracked clearly.
+BayarAman is a rekber-style trust layer for online transactions outside marketplaces. The current MVP uses manual payment collection to a BayarAman-owned bank account, manual admin payment checking, WhatsApp coordination, buyer OTP confirmation, and manual seller payout/pencairan.
 
 ## What This Repo Contains
 
-This repo currently contains product planning artifacts:
-
-- `PRD.md`: Product Requirements Document for BayarAman MVP.
-- `TRD.md`: Technical Requirements Document based on the PRD and Midtrans integration plan, including Mermaid flowcharts and sequence diagrams.
-- `AUTH.md`: Auth, role, tier, verification, and permission design.
-- `DATABASE.md`: PostgreSQL database design for auth, transactions, Midtrans, disputes, refunds, payouts, audit, and notifications.
+- `PRD.md`: Product Requirements Document for the manual-payment rekber MVP.
+- `TRD.md`: Technical Requirements Document with flowcharts and sequence diagrams.
+- `AUTH.md`: Auth, role, tier, Google OAuth, and verification design.
+- `DATABASE.md`: PostgreSQL database design for auth, transactions, manual payments, WA group tracking, confirmation OTP, payout, and audit.
+- `BayarAman-bisnis-flow-infographic.html/png`: Business-flow infographic.
+- `BayarAman-midtrans-tech-flow-infographic.html/png`: Older Midtrans technology infographic; kept as historical reference until replaced.
 - `requirenment/`: Original exported product, journey, PRD, and business model drafts.
-- `BayarAman-bisnis-flow-infographic.html`: Business-flow infographic source.
-- `BayarAman-bisnis-flow-infographic.png`: Business-flow infographic image.
-- `BayarAman-midtrans-tech-flow-infographic.html`: Midtrans and technology-flow infographic source.
-- `BayarAman-midtrans-tech-flow-infographic.png`: Midtrans and technology-flow infographic image.
 
 ## Product Summary
 
-BayarAman is not a marketplace and not a wallet. It is a transaction trust layer:
+BayarAman is not a marketplace, wallet, or payment gateway. BayarAman is a trust layer:
 
-1. Seller creates a transaction link.
-2. Buyer reviews the agreement and total payment.
-3. Buyer pays through Midtrans Snap.
-4. BayarAman receives payment status from Midtrans webhook.
-5. Funds are marked as secured.
-6. Seller delivers goods/services and uploads proof.
-7. Buyer confirms or opens a dispute.
-8. BayarAman releases funds, refunds buyer, or handles split settlement based on policy and evidence.
+1. Seller or buyer creates a BayarAman transaction.
+2. Buyer pays to BayarAman's bank account.
+3. Buyer clicks `Sudah Bayar`.
+4. Admin checks whether the payment has arrived.
+5. If payment is valid, admin creates a WhatsApp group for buyer, seller, and BayarAman.
+6. Admin announces in the WhatsApp group that payment has been received.
+7. Seller ships goods/services.
+8. Seller and buyer report in the group when the order is complete.
+9. Admin sends a buyer confirmation link in the group.
+10. Buyer confirms with OTP through email or WhatsApp.
+11. Admin manually transfers payout/pencairan to seller.
+
+Buyer-seller complaints are handled outside the system during MVP, mainly in the WhatsApp group. BayarAman records the final outcome: release, refund, split settlement, or cancelled.
+
+Transactions that have not been paid expire in 1x24 hours.
 
 ## MVP Direction
 
-The MVP uses:
+Included in MVP:
 
-- Seller-created transaction links.
-- Midtrans Snap for buyer payment collection.
-- Midtrans webhook for payment status update.
-- BayarAman-owned escrow/status logic.
-- Seller delivery proof.
-- Buyer confirmation or dispute.
-- Auto-release after 1x24 hours when eligible.
-- Manual admin dispute resolution.
-- Manual seller payout.
-- Audit log for important actions.
+- Seller-created transaction.
+- Buyer-created transaction with seller bank account input and seller acceptance/verification where needed.
+- Manual buyer payment to BayarAman bank account.
+- `Sudah Bayar` action by buyer.
+- Admin manual payment checking.
+- 1x24 hour payment expiry for unpaid transactions.
+- WhatsApp group link/name tracking.
+- Buyer confirmation link.
+- OTP confirmation by email or WhatsApp.
+- Manual seller payout/pencairan recording.
+- Minimal issue/outcome recording.
 
-Payment collection is automated through Midtrans. Seller payout remains manual in MVP.
+Not MVP:
 
-## Midtrans Usage
+- Midtrans/payment gateway integration.
+- Full automated bank mutation reconciliation.
+- Full admin dashboard/login.
+- In-app dispute resolution.
+- Automated seller payout/disbursement.
+- Wallet/balance.
+- Marketplace/storefront.
 
-BayarAman uses these Midtrans capabilities:
+## Manual Payment Usage
 
-- Snap API: create payment session.
-- Snap token/redirect_url: send buyer to payment page.
-- HTTP(S) Notification/Webhook: receive payment status changes.
-- Transaction Status API: fallback/manual reconciliation.
-- Refund API: where supported by payment method and business policy.
+BayarAman uses a manual payment flow for MVP:
+
+- Buyer pays to BayarAman's bank account.
+- Buyer clicks `Sudah Bayar`.
+- Admin checks incoming payment manually.
+- Payment is considered confirmed only after admin verification.
+- If payment is not received within 1x24 hours, the transaction expires.
 
 Important boundary:
 
-Midtrans is the payment gateway. BayarAman is the trust/escrow workflow owner. Dispute, release, refund decision, payout, and audit trail remain inside BayarAman.
+BayarAman remains the trust workflow owner: transaction state, payment checking, WhatsApp coordination, confirmation, issue outcome, release/refund decision, payout/pencairan, and audit trail stay inside BayarAman.
 
 ## Business Model
 
@@ -84,27 +96,6 @@ Start here:
 3. `AUTH.md`
 4. `DATABASE.md`
 5. `BayarAman-bisnis-flow-infographic.png`
-6. `BayarAman-midtrans-tech-flow-infographic.png`
-7. `requirenment/BayarAman — Product Concept (Draft).md`
-8. `requirenment/BayarAman — User Journey Blueprint v2 (Draft).md`
-
-Note: Some source files use long Notion-exported filenames.
-
-## Converting Infographic HTML to PNG
-
-The PNG files were generated from HTML using Chrome headless.
-
-Example:
-
-```bash
-'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' \
-  --headless=new \
-  --disable-gpu \
-  --hide-scrollbars \
-  --window-size=1200,2400 \
-  --screenshot=BayarAman-bisnis-flow-infographic.png \
-  'file:///Users/nununugraha/Documents/Programming/OtherPorject/bayarman/BayarAman-bisnis-flow-infographic.html'
-```
 
 ## Current Status
 
@@ -112,7 +103,6 @@ This repo is still in product definition stage. There is no application code yet
 
 Recommended next step:
 
-- Turn `PRD.md` into implementation tickets.
-- Decide first enabled Midtrans payment methods.
-- Define data model and status transition rules.
-- Start MVP build with transaction link + Midtrans Snap payment + webhook handling.
+- Turn `PRD.md` and `TRD.md` into implementation tickets.
+- Confirm the exact operational bank account and payment-checking SOP.
+- Build transaction creation, manual payment marker, admin payment review, WA ops record, buyer confirmation, and manual payout recording.

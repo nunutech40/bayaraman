@@ -35,10 +35,12 @@ User yang sudah login dan verify email + phone.
 
 Can:
 
-- Membuat transaksi sebagai seller.
-- Membuka transaksi sebagai buyer.
-- Membayar transaksi.
+- Membuat transaksi sebagai seller atau buyer.
+- Membuka transaksi sebagai buyer atau seller dari link.
+- Menerima/memverifikasi transaksi jika menjadi seller pada buyer-created flow.
+- Membayar ke rekening BayarAman dan klik `Sudah Bayar` jika menjadi buyer.
 - Mengisi data payout jika menjadi seller.
+- Konfirmasi penyelesaian transaksi via confirmation link + OTP jika menjadi buyer.
 - Menjadi buyer/seller tergantung transaksi.
 
 ### 2.3 Admin
@@ -51,10 +53,10 @@ Can:
 
 - Melihat admin dashboard.
 - Review transaksi.
-- Review dispute.
-- Freeze/unfreeze transaksi.
-- Request evidence.
-- Memberi keputusan dispute.
+- Review payment manual.
+- Membuat/mencatat WhatsApp group.
+- Generate buyer confirmation link.
+- Record final outcome transaksi.
 
 Cannot:
 
@@ -71,7 +73,6 @@ Status: post-MVP auth/login. MVP database tetap menyiapkan field payout/refund/a
 Can:
 
 - Melihat payment/payout/refund queue.
-- Sync payment status.
 - Memproses payout manual.
 - Mark payout processing/paid/failed.
 - Memproses manual refund fallback.
@@ -154,7 +155,7 @@ Required before:
 
 - Create transaction.
 - Join/pay transaction.
-- Open dispute.
+- Report issue or confirm final outcome.
 - Receive payout.
 
 ### 4.2 Phone Verification
@@ -183,15 +184,13 @@ Manual verification may be requested if:
 | View landing page | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | Open transaction link | Limited | Yes | Yes | Yes | Yes | Yes | Yes |
 | Create transaction | No | Yes | Yes | Yes | No* | No* | Yes |
-| Pay transaction | No | Yes | Yes | No | No | No | No |
-| Upload delivery proof | No | No | No | Yes | No | No | No |
-| Confirm received | No | No | Yes | No | No | No | No |
-| Open dispute | No | No | Yes | No | No | No | No |
-| Respond to dispute | No | No | No | Yes | No | No | No |
-| Review dispute | No | No | No | No | Yes | No | Yes |
-| Decide dispute | No | No | No | No | Yes | No | Yes |
-| Freeze transaction | No | No | No | No | Yes | No | Yes |
-| Sync payment status | No | No | No | No | Yes | Yes | Yes |
+| Pay to BayarAman account + click Sudah Bayar | No | Yes | Yes | No | No | No | No |
+| Accept buyer-created transaction | No | No | No | Yes | No | No | No |
+| Confirm completion with OTP | No | No | Yes | No | No | No | No |
+| Record WA group | No | No | No | No | Yes | No | Yes |
+| Review manual payment | No | No | No | No | Yes | Yes | Yes |
+| Generate confirmation link | No | No | No | No | Yes | No | Yes |
+| Record final outcome | No | No | No | No | Yes | No | Yes |
 | Process payout | No | No | No | No | No | Yes | Yes |
 | Manage fee/limit | No | No | No | No | No | No | Yes |
 | Manage internal roles | No | No | No | No | No | No | Yes |
@@ -217,8 +216,7 @@ Require login + verification:
 - `/dashboard`
 - `/t/[code]/pay`
 - `/t/[code]/confirm`
-- `/t/[code]/dispute`
-- `/t/[code]/delivery-proof`
+- `/t/[code]/seller-accept`
 
 ### 6.3 Admin Routes
 
@@ -226,8 +224,9 @@ Require global role `ADMIN` or `SUPER_ADMIN`:
 
 - `/admin`
 - `/admin/transactions`
-- `/admin/disputes`
-- `/admin/risk`
+- `/admin/payment-review`
+- `/admin/wa-groups`
+- `/admin/confirmations`
 - `/admin/audit`
 
 ### 6.4 Finance Routes
@@ -251,64 +250,73 @@ Allowed if:
 - User is not blocked/frozen globally.
 - User tier limit allows new transaction.
 
-### 7.2 Payment
+### 7.2 Manual Payment Claim
 
 Allowed if:
 
 - User is logged in.
 - Email and phone verified.
 - User is buyer or can claim buyer role for unclaimed transaction link.
+- Seller has accepted buyer-created transaction when applicable.
 - Transaction status is `WAITING_BUYER_PAYMENT`.
+- Transaction has not expired.
+- Buyer identity is locked before or when `Sudah Bayar` is submitted.
 
-### 7.3 Delivery Proof
-
-Allowed if:
-
-- User is transaction seller.
-- Transaction status is `FUNDS_SECURED`.
-- Transaction is not frozen.
-
-### 7.4 Buyer Confirmation
+### 7.3 Buyer Confirmation OTP
 
 Allowed if:
 
-- User is transaction buyer.
-- Transaction status is `DELIVERED`.
-- Transaction is not disputed/frozen.
+- Confirmation link is valid and not expired.
+- Buyer email/phone matches transaction buyer snapshot or logged-in buyer.
+- OTP is valid, not expired, and attempt limit is not exceeded.
+- Transaction status is `WAITING_BUYER_CONFIRMATION`.
 
-### 7.5 Open Dispute
-
-Allowed if:
-
-- User is transaction buyer.
-- Transaction status is `FUNDS_SECURED` or `DELIVERED`.
-- Transaction is not already resolved.
-
-### 7.6 Seller Dispute Response
+### 7.4 Seller Acceptance
 
 Allowed if:
 
-- User is transaction seller.
-- Dispute is active.
-- Response window has not been closed, or admin allows late evidence.
+- User is logged in.
+- Email and phone verified.
+- User is the invited seller or can claim seller role.
+- Seller verifies payout bank account before transaction moves to buyer payment.
+- Transaction status is `WAITING_SELLER_ACCEPTANCE`.
 
-### 7.7 Admin Decision
+### 7.5 Operator Payment Review
 
 Allowed if:
 
-- User global role is `ADMIN` or `SUPER_ADMIN`.
-- Dispute is active or under review.
-- Decision includes reason.
+- Actor is approved MVP operator or future `ADMIN`/`FINANCE`/`SUPER_ADMIN`.
+- Transaction has a buyer `Sudah Bayar` claim or is being reviewed for expiry/anomaly.
+- Admin manually verifies incoming funds in BayarAman's bank account.
+- Expected amount validation passes before changing transaction status.
+- Non-confirmed result includes an operator note.
+
+### 7.6 WA Group Record
+
+Allowed if:
+
+- Actor is approved MVP operator or future `ADMIN`/`SUPER_ADMIN`.
+- Transaction status is `PAYMENT_CONFIRMED`.
+- Group name or group URL is provided.
+
+### 7.7 Outcome Recording
+
+Allowed if:
+
+- Actor is approved MVP operator or future `ADMIN`/`SUPER_ADMIN`.
+- Issue/outcome is handled outside the system first.
+- Outcome is one of release, refund, split, or cancelled.
+- Non-release outcome includes a reason/note.
 
 ### 7.8 Payout Processing
 
 Allowed if:
 
-- User global role is `FINANCE` or `SUPER_ADMIN`.
-- Transaction status is `COMPLETED`.
+- Actor is approved MVP operator or future `FINANCE`/`SUPER_ADMIN`.
+- Transaction status is `PAYOUT_PENDING` or `PAYOUT_PROCESSING`.
 - Payout status is `PAYOUT_PENDING` or `PAYOUT_PROCESSING`.
-- No active dispute/freeze/blocking risk flag.
-- Maker-checker rule satisfied for payout > Rp1.000.000.
+- Buyer confirmation exists, or a manual override/outcome note exists.
+- Bank account snapshot is present.
 
 ## 8. Auth State Machine
 
@@ -328,18 +336,20 @@ stateDiagram-v2
 
 Seller role:
 
-- Assigned when verified user creates transaction.
+- Assigned when verified user creates transaction as seller.
+- Assigned when seller accepts buyer-created transaction.
 
 Buyer role:
 
-- Assigned when verified user opens transaction link and chooses to continue as buyer.
-- Buyer identity should be locked before payment session is created.
-- After payment session exists, buyer cannot be swapped without admin action/cancel flow.
+- Assigned when verified user creates transaction as buyer.
+- Assigned when verified user opens seller-created transaction link and chooses to continue as buyer.
+- Buyer identity should be locked before `Sudah Bayar` is submitted.
+- After payment is claimed or reviewed, buyer cannot be swapped without operator action/cancel flow.
 
 Reason:
 
 - Prevent buyer identity ambiguity.
-- Prevent payment/dispute/refund confusion.
+- Prevent payment, confirmation, refund, and payout confusion.
 
 ## 10. Suggested Data Model
 

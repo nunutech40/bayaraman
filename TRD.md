@@ -1,43 +1,34 @@
 # Technical Requirements Document (TRD)
 
-# BayarAman MVP
+# BayarAman MVP: Manual Payment Review + Manual Payout
 
 ## 1. Document Control
 
 - Product: BayarAman
-- Version: TRD v1.0
-- Status: Draft for MVP engineering
+- Version: TRD v4.0
+- Status: Draft aligned with PRD v4.0
 - Source PRD: `PRD.md`
-- Last updated: 2026-07-09
+- Last updated: 2026-07-14
 
 ## 2. Technical Summary
 
-BayarAman MVP is a web-first escrow-style transaction workflow. The system creates seller-first transaction links, collects buyer payment through Midtrans Snap, receives payment status from Midtrans notifications, tracks delivery proof and dispute state, and allows finance/admin to process seller payout manually.
+BayarAman MVP uses manual payment collection and manual operations for fulfillment coordination and seller payout/pencairan. The backend creates a transaction and expected payment instruction, buyer clicks `Sudah Bayar`, admin manually checks incoming payment, records the transaction as paid, then operator creates a WhatsApp group, sends buyer confirmation link, verifies OTP, and records manual payout to seller.
 
-Payment collection is automated through Midtrans. Escrow logic, dispute workflow, auto-release, refund decision, payout decision, and audit log are implemented inside BayarAman.
+Transactions that remain unpaid expire after 1x24 hours.
 
-## 3. Proposed Technology Stack
+## 3. Technology Stack
 
-### 3.1 Application
-
-- Frontend: Next.js
-- Backend/API: Next.js API Routes or server actions
+- Frontend/backend: Next.js
 - Language: TypeScript
-- Styling: Tailwind CSS or equivalent utility CSS
 - ORM: Prisma or Drizzle
 - Database: PostgreSQL
-- Queue/Cron: Redis-backed queue or managed scheduled jobs
-- File storage: S3/R2/Supabase Storage
-- Notifications: Email first, WhatsApp later
-- Deployment: Vercel/Railway/Fly.io/Render or similar
-
-### 3.2 External Services
-
-- Payment gateway: Midtrans
-- Payment product: Midtrans Snap
-- Payment status update: Midtrans HTTP(S) Notification/Webhook
-- Payment reconciliation fallback: Midtrans Transaction Status API
-- Refund: Midtrans Refund API where supported, manual fallback otherwise
+- Auth: Auth.js/NextAuth.js with email/password credentials and Google OAuth
+- Password hashing: Argon2id preferred, bcrypt acceptable
+- Manual payment collection: BayarAman bank account
+- Email OTP: Resend, SendGrid, Postmark, or equivalent
+- WhatsApp OTP: WhatsApp Business API provider later; manual/operator fallback acceptable for MVP
+- File storage: optional for payout references/proofs; S3/R2/Supabase Storage
+- Queue/cron: useful for payment expiry checks, OTP cleanup, reminders, and operational SLA reminders
 
 ## 4. System Architecture
 
@@ -49,737 +40,344 @@ BayarAman Web App
         |
         v
 BayarAman Backend/API
-   |        |         |
-   |        |         +--> Object Storage: evidence files
-   |        +------------> PostgreSQL: core data
-   +---------------------> Midtrans Snap/API
-        ^
-        |
-Midtrans Webhook
+   |        |          |
+   |        |          +--> Email/OTP provider
+   |        +-------------> PostgreSQL
+   +----------------------> Optional object storage
+
+Manual ops:
+- buyer pays to BayarAman bank account
+- buyer clicks Sudah Bayar
+- admin checks incoming payment manually
+- operator creates WhatsApp group
+- operator sends confirmation link
+- operator manually transfers/pays out seller
 ```
 
-Admin and finance use the same web app with protected admin routes.
-
-## 5. Technical Flow Diagrams
-
-These diagrams translate the PRD user flow, business model flow, and payment technology flow into engineering-readable flows.
+## 5. Core Technical Flows
 
 ### 5.1 Business Model Flow
 
 ```mermaid
 flowchart LR
-  A[Buyer and Seller meet outside marketplace] --> B[Seller creates BayarAman transaction link]
-  B --> C[Buyer reviews deal, fee, policy, and total payment]
-  C --> D[Buyer pays to BayarAman via Midtrans]
-  D --> E[BayarAman earns transaction fee]
-  D --> F[Funds marked secured]
-  F --> G[Seller delivers goods or service]
-  G --> H{Buyer review}
-  H -->|Confirm| I[Transaction completed]
-  H -->|No action after 1x24h and eligible| I
-  H -->|Dispute| J[Admin dispute review]
-  J -->|Release| I
-  J -->|Refund| K[Buyer refund]
-  J -->|Split| L[Split settlement]
-  I --> M[Manual seller payout]
-  M --> N[Repeat usage and trust signal]
+  A[Buyer and seller deal outside marketplace] --> B[One party creates BayarAman transaction]
+  B --> C[Buyer pays to BayarAman bank account]
+  C --> D[Buyer clicks Sudah Bayar]
+  D --> E[Admin verifies incoming payment]
+  E --> F[Operator creates WA trust room]
+  F --> G[Seller fulfills order]
+  G --> H[Buyer confirms with OTP]
+  H --> I[BayarAman keeps fee]
+  I --> J[Operator manually pays out seller]
 ```
 
-### 5.2 App User Flow
+### 5.2 Seller-Created App Flow
 
 ```mermaid
 flowchart TD
-  S1[Seller login/register] --> S2[Create transaction]
-  S2 --> S3[System generates transaction link]
-  S3 --> S4[Seller shares link]
-  S4 --> B1[Buyer opens transaction page]
-  B1 --> B2[Buyer reviews agreement, amount, fee, policy]
-  B2 --> B3[Buyer starts payment]
-  B3 --> P1[Payment pending]
-  P1 --> P2{Payment result}
-  P2 -->|Success| T1[FUNDS_SECURED]
-  P2 -->|Failed/Expired/Cancelled| T0[Payment failed/expired/cancelled]
-  T1 --> S5[Seller uploads delivery proof]
-  S5 --> B4[Buyer review window starts]
-  B4 --> B5{Buyer action}
-  B5 -->|Confirm| C1[COMPLETED]
-  B5 -->|Dispute| D1[DISPUTED]
-  B5 -->|No action and eligible| C1
-  D1 --> A1[Admin decision]
-  A1 -->|Release| C1
-  A1 -->|Refund| R1[REFUNDED]
-  A1 -->|Split| SP1[SPLIT_SETTLEMENT]
-  C1 --> PO1[PAYOUT_PENDING]
-  PO1 --> PO2[Manual payout]
-  PO2 --> PO3[PAID_OUT]
+  S[Seller creates transaction] --> A[Seller enters amount, agreement, buyer contact, seller bank]
+  A --> B[System creates transaction code/link]
+  B --> C[Seller shares link to buyer]
+  C --> D[Buyer opens link and logs in/verifies]
+  D --> E[System shows BayarAman bank payment instruction]
+  E --> F[Buyer pays to BayarAman bank account]
+  F --> G[Buyer clicks Sudah Bayar]
+  G --> H[Status: PAYMENT_UNDER_REVIEW]
+  H --> I[Admin checks incoming payment]
+  I --> J{Payment valid?}
+  J -->|No| K[Return to WAITING_BUYER_PAYMENT or manual review]
+  J -->|Yes| L[Status: PAYMENT_CONFIRMED]
+  L --> M[Operator creates WA group and stores link]
+  M --> N[Operator announces payment received]
+  N --> O[Seller fulfills order]
+  O --> P[Buyer and seller report complete in WA group]
+  P --> Q[Operator sends confirmation link]
+  Q --> R[Buyer OTP confirmation]
+  R --> T[PAYOUT_PENDING]
+  T --> U[Operator records manual payout]
+  E --> V[Unpaid after 1x24 hours]
+  V --> W[PAYMENT_EXPIRED]
 ```
 
-### 5.3 Midtrans Payment Sequence
+### 5.3 Buyer-Created App Flow
+
+```mermaid
+flowchart TD
+  B[Buyer creates transaction] --> A[Buyer enters deal detail, seller contact, seller bank]
+  A --> C[System creates seller acceptance link]
+  C --> D[Seller opens link and logs in/verifies]
+  D --> E{Seller accepts and verifies bank?}
+  E -->|No| X[Transaction cancelled/revised]
+  E -->|Yes| F[System shows BayarAman bank payment instruction]
+  F --> G[Buyer pays to BayarAman bank account]
+  G --> H[Buyer clicks Sudah Bayar]
+  H --> I[Admin checks incoming payment]
+  I --> J{Payment valid?}
+  J -->|No| K[Return to WAITING_BUYER_PAYMENT or manual review]
+  J -->|Yes| L[Operator creates WA group]
+  L --> M[Operator announces payment received]
+  M --> N[Seller fulfills order]
+  N --> O[Buyer and seller report complete in WA group]
+  O --> P[Operator sends confirmation link]
+  P --> Q[Buyer confirms with OTP]
+  Q --> R[Operator pays out seller manually]
+  F --> S[Unpaid after 1x24 hours]
+  S --> T[PAYMENT_EXPIRED]
+```
+
+### 5.4 Manual Payment Review Sequence
 
 ```mermaid
 sequenceDiagram
   autonumber
   actor Buyer
-  participant Web as BayarAman Web
-  participant API as BayarAman Backend
-  participant DB as PostgreSQL
-  participant MT as Midtrans Snap
-
-  Buyer->>Web: Click "Lanjut Bayar"
-  Web->>API: POST /transactions/:id/payment
-  API->>DB: Validate transaction, fee, amount, status
-  API->>MT: Create Snap transaction
-  MT-->>API: token + redirect_url
-  API->>DB: Store payment session
-  API-->>Web: redirect_url
-  Web-->>Buyer: Redirect to Midtrans payment page
-  Buyer->>MT: Complete payment
-  MT-->>Buyer: Payment result page
-  MT->>API: HTTP(S) notification/webhook
-  API->>API: Verify signature, order_id, gross_amount
-  API->>DB: Idempotently update payment status
-  API->>DB: If success, set transaction FUNDS_SECURED
-  API-->>MT: 2xx response
-  Buyer->>Web: Return/open transaction page
-  Web->>API: GET transaction status
-  API-->>Web: FUNDS_SECURED / pending / failed
-```
-
-### 5.4 Dispute Sequence
-
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Buyer
-  actor Seller
   actor Admin
   participant Web as BayarAman Web
-  participant API as BayarAman Backend
-  participant Store as Object Storage
+  participant API as BayarAman API
   participant DB as PostgreSQL
+  participant Bank as BayarAman Bank Account
 
-  Buyer->>Web: Open dispute
-  Web->>API: Submit reason, chronology, evidence
-  API->>Store: Upload evidence files
-  API->>DB: Create dispute and audit log
-  API-->>Seller: Notify dispute opened
-  Seller->>Web: Submit response and evidence
-  Web->>API: POST seller response
-  API->>Store: Upload seller evidence
-  API->>DB: Store response and audit log
-  Admin->>Web: Review dispute queue
-  Web->>API: Load dispute detail
-  API-->>Web: Evidence, transaction, risk, audit
-  Admin->>Web: Decide refund/release/split/request evidence/freeze
-  Web->>API: Submit decision with reason
-  API->>DB: Update transaction/dispute status
-  API->>DB: Write audit log
-  API-->>Buyer: Notify decision
-  API-->>Seller: Notify decision
+  Buyer->>Web: Open payable transaction
+  Web->>API: GET /api/transactions/:code
+  API->>DB: Load transaction and expected payment amount
+  API-->>Web: Payment instruction + expiry time
+  Buyer->>Bank: Transfer to BayarAman account
+  Buyer->>Web: Click Sudah Bayar
+  Web->>API: POST /api/transactions/:id/payment-claim
+  API->>DB: Set status PAYMENT_UNDER_REVIEW and store claimed_at
+  Admin->>Bank: Check incoming payment manually
+  Admin->>Web: Record payment review result
+  Web->>API: POST /api/ops/transactions/:id/payment-review
+  API->>DB: Validate expected amount and current status
+  API->>DB: If valid, set payment status CONFIRMED and transaction PAYMENT_CONFIRMED
 ```
 
-### 5.5 Payout Sequence
+### 5.5 Payment Expiry Sequence
 
 ```mermaid
 sequenceDiagram
   autonumber
-  actor Finance
-  participant Web as Admin Console
-  participant API as BayarAman Backend
+  participant Cron as Scheduler/Cron
+  participant API as BayarAman API
   participant DB as PostgreSQL
-  participant Bank as Bank Transfer
 
-  API->>DB: Completed transaction enters PAYOUT_PENDING
-  Finance->>Web: Open payout queue
-  Web->>API: GET payout detail
-  API-->>Web: Payout amount, seller bank, eligibility
-  Finance->>Web: Approve/process payout
-  Web->>API: Mark PAYOUT_PROCESSING
-  API->>DB: Lock payout and write audit log
-  Finance->>Bank: Manual transfer to seller
-  Finance->>Web: Mark paid or failed
-  Web->>API: Update payout result
-  API->>DB: PAID_OUT or PAYOUT_FAILED + audit log
+  Cron->>API: Run payment expiry job
+  API->>DB: Find WAITING_BUYER_PAYMENT transactions past expires_at
+  API->>DB: Mark transactions PAYMENT_EXPIRED
+  API->>DB: Append audit log
 ```
 
-### 5.6 Transaction State Diagram
+### 5.6 WA Group and Fulfillment Sequence
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Operator
+  actor Buyer
+  actor Seller
+  participant Web as BayarAman Ops Route
+  participant API as BayarAman API
+  participant DB as PostgreSQL
+  participant WA as WhatsApp
+
+  Operator->>WA: Create group with buyer, seller, operator
+  Operator->>Web: Paste group name/link
+  Web->>API: POST /api/ops/transactions/:id/wa-group
+  API->>DB: Store wa_group_url, wa_group_created_at
+  Operator->>WA: Announce payment received
+  Web->>API: POST /api/ops/transactions/:id/payment-announcement
+  API->>DB: Set status WA_GROUP_CREATED / IN_FULFILLMENT
+  Seller->>WA: Send shipping/progress info
+  Buyer->>WA: Confirms item/service completion verbally
+```
+
+### 5.7 Buyer Confirmation OTP Sequence
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Operator
+  actor Buyer
+  participant Web as BayarAman Web
+  participant API as BayarAman API
+  participant OTP as Email/WhatsApp OTP Provider
+  participant DB as PostgreSQL
+
+  Operator->>Web: Generate buyer confirmation link
+  Web->>API: POST /api/ops/transactions/:id/confirmation-link
+  API->>DB: Store token_hash, expiry, status WAITING_BUYER_CONFIRMATION
+  Operator->>Buyer: Send link in WA group
+  Buyer->>Web: Open confirmation link
+  Web->>API: POST /api/confirmations/:token/request-otp
+  API->>OTP: Send OTP to buyer email or WhatsApp
+  API->>DB: Store otp_hash, expires_at, attempts=0
+  Buyer->>Web: Submit OTP
+  Web->>API: POST /api/confirmations/:token/verify
+  API->>DB: Validate token, OTP, expiry, attempts
+  API->>DB: Set status BUYER_CONFIRMED and PAYOUT_PENDING
+```
+
+### 5.8 Manual Payout/Pencairan Sequence
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Operator
+  participant Web as BayarAman Ops Route
+  participant API as BayarAman API
+  participant DB as PostgreSQL
+  participant Bank as Operator Bank App
+
+  Operator->>Web: Open payout-eligible transaction
+  Web->>API: GET payout detail
+  API-->>Web: Seller bank, seller net, fee, buyer confirmation
+  Operator->>Bank: Transfer seller payout manually
+  Operator->>Web: Record payout result/reference
+  Web->>API: POST /api/ops/transactions/:id/payout
+  API->>DB: Store payout status, paid_at, reference, audit log
+  API->>DB: Set transaction PAID_OUT when payout succeeds
+```
+
+## 6. Transaction State Model
 
 ```mermaid
 stateDiagram-v2
   [*] --> DRAFT
+  DRAFT --> WAITING_SELLER_ACCEPTANCE
   DRAFT --> WAITING_BUYER_PAYMENT
-  WAITING_BUYER_PAYMENT --> PAYMENT_PENDING
-  WAITING_BUYER_PAYMENT --> CANCELLED
-  WAITING_BUYER_PAYMENT --> EXPIRED
-  PAYMENT_PENDING --> FUNDS_SECURED
-  PAYMENT_PENDING --> PAYMENT_FAILED
-  PAYMENT_PENDING --> EXPIRED
-  PAYMENT_PENDING --> CANCELLED
-  FUNDS_SECURED --> DELIVERED
-  FUNDS_SECURED --> DISPUTED
-  DELIVERED --> RELEASE_PENDING
-  DELIVERED --> DISPUTED
-  RELEASE_PENDING --> COMPLETED
-  DISPUTED --> UNDER_REVIEW
-  UNDER_REVIEW --> REFUND_PENDING
-  UNDER_REVIEW --> RELEASE_PENDING
-  UNDER_REVIEW --> SPLIT_SETTLEMENT
-  UNDER_REVIEW --> EVIDENCE_REQUESTED
-  EVIDENCE_REQUESTED --> UNDER_REVIEW
-  REFUND_PENDING --> REFUNDED
-  SPLIT_SETTLEMENT --> COMPLETED
-  COMPLETED --> PAYOUT_PENDING
+  WAITING_SELLER_ACCEPTANCE --> WAITING_BUYER_PAYMENT
+  WAITING_SELLER_ACCEPTANCE --> CANCELLED
+  WAITING_BUYER_PAYMENT --> PAYMENT_UNDER_REVIEW
+  WAITING_BUYER_PAYMENT --> PAYMENT_EXPIRED
+  PAYMENT_UNDER_REVIEW --> PAYMENT_CONFIRMED
+  PAYMENT_UNDER_REVIEW --> WAITING_BUYER_PAYMENT
+  PAYMENT_UNDER_REVIEW --> PAYMENT_INVALID
+  PAYMENT_UNDER_REVIEW --> MANUAL_REVIEW
+  PAYMENT_CONFIRMED --> WA_GROUP_CREATED
+  WA_GROUP_CREATED --> IN_FULFILLMENT
+  IN_FULFILLMENT --> WAITING_BUYER_CONFIRMATION
+  IN_FULFILLMENT --> ISSUE_REPORTED
+  ISSUE_REPORTED --> MANUAL_REVIEW
+  MANUAL_REVIEW --> WAITING_BUYER_CONFIRMATION
+  MANUAL_REVIEW --> REFUND_PENDING
+  MANUAL_REVIEW --> SPLIT_SETTLEMENT
+  MANUAL_REVIEW --> CANCELLED
+  WAITING_BUYER_CONFIRMATION --> BUYER_CONFIRMED
+  BUYER_CONFIRMED --> PAYOUT_PENDING
   PAYOUT_PENDING --> PAYOUT_PROCESSING
   PAYOUT_PROCESSING --> PAID_OUT
   PAYOUT_PROCESSING --> PAYOUT_FAILED
+  REFUND_PENDING --> REFUNDED
   PAID_OUT --> [*]
   REFUNDED --> [*]
 ```
 
-## 6. Core Modules
+## 7. Core Modules
 
-### 6.1 Auth and Role Module
+### Auth and Identity
 
-Responsibilities:
+- Email/password registration.
+- Google OAuth registration/login.
+- Email verification.
+- Phone verification.
+- Buyer confirmation OTP.
+- Transaction-level buyer/seller role.
+- Admin/finance login reserved for Phase 2.
 
-- Register/login.
-- Email/phone verification.
-- Role resolution per transaction.
-- Admin/finance/super admin access control.
-- Manual Pro assignment for MVP.
+### Transaction
 
-### 6.2 Transaction Module
-
-Responsibilities:
-
-- Create seller-first transaction.
-- Generate transaction code and shareable link.
-- Store agreement, amount, category, deadline, fee payer.
-- Enforce status transitions.
-- Render transaction detail page per role/status.
-
-### 6.3 Fee and Limit Module
-
-Responsibilities:
-
-- Calculate 2% fee, min Rp20.000, max Rp100.000.
-- Calculate buyer total and seller net based on fee payer.
-- Enforce Free user limits.
-- Flag Pro transactions above Rp5.000.000.
-
-### 6.4 Payment Module
-
-Responsibilities:
-
-- Create Midtrans Snap transaction.
-- Store Snap token, redirect_url, Midtrans order_id, expected amount, and status.
-- Handle payment pending/success/failed/expired/cancelled.
-- Provide admin payment sync action.
-
-### 6.5 Midtrans Webhook Module
-
-Responsibilities:
-
-- Receive Midtrans notification.
-- Verify signature.
-- Validate order_id and amount.
-- Process idempotently.
-- Store event payload summary.
-- Update payment and transaction status.
-
-### 6.6 Delivery Proof Module
-
-Responsibilities:
-
-- Upload delivery proof after funds secured.
-- Store evidence metadata.
-- Store files in object storage.
-- Start buyer review window.
-
-### 6.7 Review and Auto-Release Module
-
-Responsibilities:
-
-- Track buyer review deadline.
-- Allow buyer confirmation.
-- Run auto-release job.
-- Block auto-release when dispute, freeze, risk flag, suspicious proof, or high-risk transaction exists.
-
-### 6.8 Dispute Module
-
-Responsibilities:
-
-- Buyer opens dispute.
-- Seller responds.
-- Admin reviews evidence.
-- Admin decides refund, release, split, request more evidence, extend, or freeze.
-- Enforce reason for admin decision.
-
-### 6.9 Refund Module
-
-Responsibilities:
-
-- Calculate refund amount.
-- Apply cancel fee where relevant.
-- Trigger Midtrans refund when available.
-- Support manual refund fallback.
-- Track refund status.
-
-### 6.10 Payout Module
-
-Responsibilities:
-
-- Move completed transaction to payout queue.
+- Create seller-created transaction.
+- Create buyer-created transaction.
+- Generate transaction code/link.
+- Require seller acceptance for buyer-created transaction.
 - Store seller payout bank account.
-- Enforce payout eligibility.
-- Support maker-checker for payout above Rp1.000.000.
-- Mark payout processing, paid, or failed.
+- Set payment expiry to 1x24 hours after transaction becomes payable.
+- Enforce state transitions.
 
-### 6.11 Audit Log Module
+### Manual Payment
 
-Responsibilities:
+- Store BayarAman payment destination and expected amount.
+- Record buyer `Sudah Bayar` claim.
+- Store admin payment review result.
+- Track payment status: waiting, under review, confirmed, not found, invalid, expired.
+- Append audit log for claim and review actions.
 
-- Log important state changes.
-- Log admin/finance decisions.
-- Log provider-driven payment updates.
-- Make logs append-only from normal UI.
+### WhatsApp Operations
 
-## 7. PRD-to-TRD Traceability
+- Store WA group name/link.
+- Store group-created timestamp and operator note.
+- Track that payment announcement has been made.
+- MVP group creation happens manually outside system.
 
-| PRD Area | TRD Implementation Area |
-| --- | --- |
-| Seller creates transaction link | Transaction Module, API Surface, Transaction data model |
-| Buyer reviews and pays | Transaction Module, Payment Module, Midtrans Sequence |
-| Payment gateway checkout | Midtrans Integration, Payment Module |
-| Payment success marks funds secured | Webhook Module, Payment Status Mapping |
-| Seller delivery proof | Delivery Proof Module, Object Storage, DeliveryProof model |
-| Buyer confirmation and auto-release | Review and Auto-Release Module, Scheduled Jobs |
-| Buyer dispute and seller response | Dispute Module, Dispute Sequence, Dispute model |
-| Admin dispute resolution | Admin APIs, Audit Log Module |
-| Refund tracking | Refund Module, Refund model, Midtrans Refund API |
-| Manual seller payout | Payout Module, Payout Sequence, Payout model |
-| Free/Pro rules and fees | Fee and Limit Module |
-| Audit log | Audit Log Module, AuditLog model |
-| Notifications | Notification jobs and event triggers |
+### Buyer Confirmation
 
-## 8. Midtrans Integration
+- Generate short-lived confirmation link.
+- Send OTP to buyer email or WhatsApp.
+- Verify OTP with attempt limit and expiry.
+- Move transaction to payout eligibility.
 
-### 8.1 Midtrans Product Used
+### Manual Outcome and Issue Recording
 
-Use Midtrans Snap for MVP checkout.
+- Full in-app dispute is out of MVP.
+- Buyer/seller complaint is handled outside system, mainly in WA group.
+- System records final outcome: release, refund, split, cancelled.
+- Non-normal outcome requires operator note.
 
-Supported flow:
+### Manual Payout
 
-1. BayarAman backend creates a Snap transaction.
-2. Midtrans returns `token` and `redirect_url`.
-3. Buyer pays via Midtrans hosted payment page or Snap JS.
-4. Midtrans sends HTTP(S) notification/webhook to BayarAman.
-5. BayarAman validates notification and updates transaction.
+- Calculate seller net payout.
+- Store seller bank account snapshot.
+- Record payout status/reference/timestamp.
+- Append audit log for payout decisions.
 
-MVP implementation recommendation:
+## 8. API Surface Draft
 
-- Use `redirect_url` first for simpler checkout.
-- Keep `snap.js` as later UI improvement.
-
-### 8.2 Create Snap Transaction
-
-Endpoint:
-
-```http
-POST https://app.sandbox.midtrans.com/snap/v1/transactions
-POST https://app.midtrans.com/snap/v1/transactions
-```
-
-Minimum payload concept:
-
-```json
-{
-  "transaction_details": {
-    "order_id": "BA-20260709-000001",
-    "gross_amount": 520000
-  },
-  "customer_details": {
-    "first_name": "Buyer Name",
-    "email": "buyer@example.com",
-    "phone": "08123456789"
-  }
-}
-```
-
-Response concept:
-
-```json
-{
-  "token": "snap-token",
-  "redirect_url": "https://app.sandbox.midtrans.com/snap/v2/vtweb/..."
-}
-```
-
-Technical requirements:
-
-- Generate unique `order_id` per payment attempt.
-- Store `order_id`, expected amount, token, redirect_url, status, and expiry.
-- Do not create multiple active payment sessions for the same transaction unless prior session is expired/cancelled.
-- Use server key only on backend.
-
-### 8.3 Midtrans Webhook
-
-BayarAman endpoint:
-
-```http
-POST /api/webhooks/midtrans
-```
-
-Requirements:
-
-- Endpoint must be public HTTPS in production.
-- Verify Midtrans signature key.
-- Validate `order_id` exists.
-- Validate `gross_amount` matches expected amount.
-- Treat webhook as source of truth, not frontend redirect result.
-- Process idempotently using event identity/order status uniqueness.
-- Store raw payload summary for audit/debug.
-- Return 2xx only after event is safely processed or deduplicated.
-
-### 8.4 Signature Verification
-
-Midtrans notification commonly includes `signature_key`.
-
-Verification concept:
-
-```text
-SHA512(order_id + status_code + gross_amount + server_key)
-```
-
-Requirement:
-
-- Reject or quarantine webhook if signature does not match.
-- Log rejected webhook with limited safe metadata.
-
-### 8.5 Transaction Status API
-
-Use for admin manual sync/reconciliation when:
-
-- Webhook is delayed.
-- Webhook delivery failed.
-- Buyer claims payment but transaction remains pending.
-- Admin needs to investigate status mismatch.
-
-Admin action:
-
-- Button: Sync Payment Status.
-- Result updates payment status only after provider response is validated.
-
-### 8.6 Refund API
-
-Use where supported by payment method and business policy.
-
-Rules:
-
-- Refund decision starts from BayarAman admin decision.
-- Refund amount is calculated by BayarAman.
-- If Midtrans supports refund for the payment method, trigger provider refund.
-- If not supported, create manual refund task for finance.
-- Store refund provider reference when available.
-
-## 9. Payment Status Mapping
-
-| Midtrans Status | BayarAman Payment Status | BayarAman Transaction Status |
-| --- | --- | --- |
-| `pending` | `PENDING` | `PAYMENT_PENDING` |
-| `settlement` | `PAID` | `FUNDS_SECURED` |
-| `capture` | `PAID` | `FUNDS_SECURED` |
-| `deny` | `FAILED` | `PAYMENT_FAILED` |
-| `expire` | `EXPIRED` | `EXPIRED` |
-| `cancel` | `CANCELLED` | `CANCELLED` |
-| `refund` | `REFUNDED` | `REFUNDED` |
-| `partial_refund` | `PARTIALLY_REFUNDED` | `PARTIALLY_REFUNDED` |
-
-Note:
-
-- For card payments, only successful capture should secure funds.
-- Fraud/challenge statuses must be reviewed before securing funds.
-
-## 10. Data Model Draft
-
-### 10.1 User
-
-- id
-- name
-- email
-- phone
-- password_hash
-- email_verified_at
-- phone_verified_at
-- tier: free/pro
-- created_at
-- updated_at
-
-### 10.2 Transaction
-
-- id
-- code
-- title
-- category
-- agreement
-- amount
-- fee_amount
-- total_buyer_pay
-- seller_net_amount
-- fee_payer
-- seller_id
-- buyer_id
-- status
-- delivery_deadline_at
-- review_deadline_at
-- is_frozen
-- risk_level
-- created_at
-- updated_at
-
-### 10.3 Payment
-
-- id
-- transaction_id
-- provider: midtrans
-- provider_order_id
-- expected_amount
-- status
-- snap_token
-- redirect_url
-- paid_at
-- expired_at
-- raw_status
-- created_at
-- updated_at
-
-### 10.4 MidtransEvent
-
-- id
-- payment_id
-- provider_order_id
-- transaction_status
-- fraud_status
-- status_code
-- gross_amount
-- signature_valid
-- payload_json
-- processed_at
-- created_at
-
-### 10.5 DeliveryProof
-
-- id
-- transaction_id
-- submitted_by
-- proof_type
-- notes
-- file_url
-- metadata_json
-- created_at
-
-### 10.6 Dispute
-
-- id
-- transaction_id
-- opened_by
-- reason
-- chronology
-- requested_resolution
-- status
-- seller_response
-- admin_decision
-- admin_reason
-- opened_at
-- resolved_at
-
-### 10.7 Refund
-
-- id
-- transaction_id
-- payment_id
-- amount
-- cancel_fee_amount
-- method: provider/manual
-- provider_ref
-- status
-- reason
-- processed_by
-- processed_at
-
-### 10.8 Payout
-
-- id
-- transaction_id
-- seller_id
-- amount
-- bank_name
-- bank_account_number
-- bank_account_name
-- status
-- maker_id
-- checker_id
-- paid_at
-- failed_reason
-
-### 10.9 AuditLog
-
-- id
-- actor_id
-- actor_type
-- actor_role
-- action
-- target_type
-- target_id
-- old_status
-- new_status
-- amount
-- notes
-- ip_address
-- user_agent
-- created_at
-
-## 11. API Surface Draft
-
-### Public/User APIs
+User-facing:
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
-- `POST /api/transactions`
 - `GET /api/transactions/:code`
-- `POST /api/transactions/:id/payment`
-- `POST /api/transactions/:id/delivery-proof`
-- `POST /api/transactions/:id/confirm`
-- `POST /api/transactions/:id/disputes`
-- `POST /api/disputes/:id/respond`
+- `POST /api/transactions`
+- `POST /api/transactions/:id/seller-acceptance`
+- `POST /api/transactions/:id/payment-claim`
+- `POST /api/confirmations/:token/request-otp`
+- `POST /api/confirmations/:token/verify`
 
-### Provider APIs
+Operator MVP routes:
 
-- `POST /api/webhooks/midtrans`
+- `POST /api/ops/transactions/:id/payment-review`
+- `POST /api/ops/transactions/:id/wa-group`
+- `POST /api/ops/transactions/:id/payment-announcement`
+- `POST /api/ops/transactions/:id/confirmation-link`
+- `POST /api/ops/transactions/:id/outcome`
+- `POST /api/ops/transactions/:id/payout`
 
-### Admin APIs
+Scheduled jobs:
 
-- `GET /api/admin/transactions`
-- `GET /api/admin/disputes`
-- `POST /api/admin/disputes/:id/decision`
-- `POST /api/admin/transactions/:id/freeze`
-- `POST /api/admin/transactions/:id/unfreeze`
-- `POST /api/admin/payments/:id/sync`
-- `GET /api/admin/payouts`
-- `POST /api/admin/payouts/:id/process`
-- `POST /api/admin/payouts/:id/mark-paid`
-- `POST /api/admin/payouts/:id/mark-failed`
+- `payment-expiry`: mark unpaid payable transactions as expired after 1x24 hours.
 
-## 12. Jobs and Scheduled Tasks
+## 9. Manual Payment Implementation Rules
 
-### Payment Expiry Job
+- Store the expected amount before showing payment instruction.
+- Payment confirmation must be admin-driven, not buyer-claim-driven.
+- Buyer clicking `Sudah Bayar` only moves the transaction to `PAYMENT_UNDER_REVIEW`.
+- Admin review should compare expected amount, transaction code/reference if available, timestamp, and any operational notes.
+- If payment is not found, return to `WAITING_BUYER_PAYMENT` if still within expiry.
+- If payment is invalid or anomalous, move to `PAYMENT_INVALID` or `MANUAL_REVIEW`.
+- If payment is not completed in 1x24 hours, move to `PAYMENT_EXPIRED`.
+- Every payment claim, review, status change, and override must be audit-logged.
 
-- Finds pending payment sessions past expiry.
-- Marks payment expired if provider also confirms expiry or safe timeout policy is reached.
+## 10. PRD-to-TRD Traceability
 
-### Auto-Release Job
-
-- Finds delivered transactions past review deadline.
-- Checks no dispute, no freeze, no risk flag, no suspicious proof, no high-risk category.
-- Moves eligible transaction to completed/payout pending.
-
-### Notification Retry Job
-
-- Retries failed email/WA/in-app notification delivery.
-
-### Payout Reminder Job
-
-- Alerts finance for payout queue older than SLA.
-
-## 13. Security Requirements
-
-- Store Midtrans server key in environment variable only.
-- Never expose server key to client.
-- Verify webhook signature.
-- Use HTTPS for production webhook endpoint.
-- Restrict admin APIs by role.
-- Store evidence files with private access/signed URL where possible.
-- Avoid logging secrets or full sensitive payment payloads in plain logs.
-- Implement idempotency for payment webhook and payout processing.
-
-## 14. Reliability Requirements
-
-- Webhook handler must be idempotent.
-- Payment status sync must be available from admin.
-- Auto-release must prevent duplicate release.
-- Payout must prevent double payout.
-- Refund processing must be traceable.
-- Critical state transitions must use database transaction where possible.
-
-## 15. Environment Variables
-
-```env
-MIDTRANS_SERVER_KEY=
-MIDTRANS_CLIENT_KEY=
-MIDTRANS_IS_PRODUCTION=false
-MIDTRANS_WEBHOOK_SECRET=
-DATABASE_URL=
-REDIS_URL=
-STORAGE_BUCKET=
-STORAGE_ACCESS_KEY=
-STORAGE_SECRET_KEY=
-APP_BASE_URL=
-```
-
-## 16. Local Development
-
-Recommended local flow:
-
-1. Run app locally.
-2. Use Midtrans Sandbox credentials.
-3. Expose webhook endpoint with ngrok/cloudflared.
-4. Register public webhook URL in Midtrans dashboard.
-5. Create test transaction.
-6. Pay using Midtrans sandbox payment method.
-7. Verify webhook updates transaction to funds secured.
-
-## 17. Test Scenarios
-
-### Payment
-
-- Create Snap transaction successfully.
-- Buyer completes payment.
-- Webhook settlement marks funds secured.
-- Duplicate webhook does not duplicate state changes.
-- Expired payment marks transaction expired.
-- Invalid signature webhook is rejected/quarantined.
-- Wrong amount webhook does not secure funds.
-- Manual sync updates stale pending payment.
-
-### Delivery and Review
-
-- Seller cannot upload proof before funds secured.
-- Seller uploads proof after funds secured.
-- Buyer confirms transaction.
-- Auto-release runs after review window.
-- Auto-release blocked by dispute/freeze/risk.
-
-### Dispute
-
-- Buyer opens dispute.
-- Seller responds.
-- Admin requests evidence.
-- Admin decides refund.
-- Admin decides release.
-- Admin decides split settlement.
-
-### Payout
-
-- Completed transaction enters payout queue.
-- Payout <= Rp1.000.000 uses single approval.
-- Payout > Rp1.000.000 uses maker-checker.
-- Failed payout can be marked and retried.
-
-## 18. Open Technical Questions
-
-- Which Midtrans payment methods are enabled first: VA, QRIS, e-wallet, card?
-- What is the exact Midtrans refund support per enabled method?
-- Will payout stay fully manual or use a payout partner post-MVP?
-- Which storage provider is selected for evidence?
-- Which notification channel launches first: email, WhatsApp, or both?
-- Which deployment target is selected for production?
+| PRD Need | TRD Implementation |
+| --- | --- |
+| Seller creates transaction | Transaction module, transaction link |
+| Buyer creates transaction | Transaction module, seller acceptance flow |
+| Buyer pays to BayarAman account | Manual payment instruction |
+| Buyer clicks Sudah Bayar | Payment claim endpoint |
+| Admin checks incoming payment | Payment review ops endpoint |
+| Unpaid transaction expires 1x24 hours | Payment expiry job |
+| WA group created manually | WA operations fields/API |
+| Buyer confirms via link + OTP | Confirmation token + OTP module |
+| Admin transfers money to seller | Manual payout/pencairan module |
+| Complaint outside system | Outcome/issue recording only |
