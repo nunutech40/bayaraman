@@ -97,6 +97,29 @@ Start here:
 4. `DATABASE.md`
 5. `BayarAman-bisnis-flow-infographic.png`
 
+## Frontend Prototype
+
+The static flow prototype lives in `prototype/`.
+
+Local URL while running a static server:
+
+- `http://127.0.0.1:8081/`
+
+Public GitHub Pages URL after Pages is enabled:
+
+- `https://nunutech40.github.io/bayaraman/prototype/`
+
+GitHub Pages setup:
+
+1. Open the GitHub repository settings.
+2. Go to `Pages`.
+3. Set source to `Deploy from a branch`.
+4. Select branch `main`.
+5. Select folder `/root`.
+6. Save.
+
+After GitHub finishes publishing, share the prototype URL above.
+
 ## Current Status
 
 This repo is still in product definition stage. There is no application code yet.
