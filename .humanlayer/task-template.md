@@ -7,6 +7,7 @@ Task:
 <short task name>
 
 Context:
+- Use .humanlayer/workflow.md.
 - Read README.md, PRD.md, TRD.md, AUTH.md, DATABASE.md first.
 - Follow the latest manual-payment BayarAman flow.
 - Buyer/seller are transaction-level roles.

@@ -53,16 +53,19 @@ This file is ignored by git and can be used for machine-specific paths, secrets,
 
 Every HumanLayer coding task should:
 
-1. Read `README.md`, `PRD.md`, `TRD.md`, `AUTH.md`, and `DATABASE.md` first.
-2. Treat the latest manual-payment flow as source of truth.
-3. Keep buyer/seller as transaction-level roles.
-4. Keep admin/finance/super-admin as future global/internal roles.
-5. Preserve the rule that payment is only confirmed by admin review, not by buyer clicking `Sudah Bayar`.
-6. Preserve 1x24 hour payment expiry for unpaid transactions.
-7. Keep buyer-seller complaints outside the MVP system and record only final outcomes.
-8. Add or update tests for any implemented business rule.
-9. Avoid touching infographic files unless the task explicitly asks for it.
+1. Follow `.humanlayer/workflow.md`.
+2. Read `README.md`, `PRD.md`, `TRD.md`, `AUTH.md`, and `DATABASE.md` first.
+3. Treat the latest manual-payment flow as source of truth.
+4. Keep buyer/seller as transaction-level roles.
+5. Keep admin/finance/super-admin as future global/internal roles.
+6. Preserve the rule that payment is only confirmed by admin review, not by buyer clicking `Sudah Bayar`.
+7. Preserve 1x24 hour payment expiry for unpaid transactions.
+8. Keep buyer-seller complaints outside the MVP system and record only final outcomes.
+9. Add or update tests for any implemented business rule.
+10. Avoid touching infographic files unless the task explicitly asks for it.
 
 ## Suggested First HumanLayer Tasks
 
 Use `tasks.md` as the implementation roadmap.
+
+Use `workflow.md` as the reusable planning and execution workflow.
