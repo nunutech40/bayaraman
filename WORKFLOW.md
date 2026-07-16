@@ -21,6 +21,14 @@ Output:
 - Actor ownership: buyer, seller, admin/operator.
 - Manual steps explicitly marked.
 
+Reusable template:
+
+- `docs/product/templates/user-journey-template.md`
+
+Current BayarAman output:
+
+- `docs/product/01-user-journey.md`
+
 BayarAman current journeys:
 
 - Seller input journey.
@@ -265,4 +273,3 @@ Read AGENTS.md and WORKFLOW.md.
 Use Phase 3: Execution Per Ticket.
 Work on ticket <ticket name>.
 ```
-
