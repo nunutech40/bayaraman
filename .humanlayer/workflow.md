@@ -2,18 +2,21 @@
 
 Use this workflow for every HumanLayer/Codex coding task in this repository.
 
+For non-HumanLayer agent sessions, start with the root `AGENTS.md`. This file is HumanLayer-oriented but the same planning/execution rules apply.
+
 The goal is to keep implementation aligned with BayarAman's latest manual rekber flow, while forcing planning, execution, verification, and handoff discipline.
 
 ## 0. Source of Truth
 
 Before planning or coding, read these files:
 
-1. `README.md`
-2. `PRD.md`
-3. `TRD.md`
-4. `AUTH.md`
-5. `DATABASE.md`
-6. `.humanlayer/tasks.md`
+1. `AGENTS.md`
+2. `README.md`
+3. `PRD.md`
+4. `TRD.md`
+5. `AUTH.md`
+6. `DATABASE.md`
+7. `.humanlayer/tasks.md`
 
 Latest product truth:
 
@@ -251,4 +254,3 @@ Verification:
 - Run relevant checks.
 - Report anything not run.
 ```
-

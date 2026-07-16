@@ -122,7 +122,13 @@ After GitHub finishes publishing, share the prototype URL above.
 
 ## HumanLayer Coding Workflow
 
-This repo is prepared for HumanLayer task workspaces.
+This repo is prepared for AI-assisted coding workflows.
+
+Primary reusable agent instructions:
+
+- `AGENTS.md`
+
+HumanLayer is optional orchestration. You do not need HumanLayer login to use `AGENTS.md` with Codex or another coding agent.
 
 Shared config:
 
