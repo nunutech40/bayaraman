@@ -53,8 +53,9 @@ This file is ignored by git and can be used for machine-specific paths, secrets,
 
 Every HumanLayer coding task should:
 
-1. Follow `.humanlayer/workflow.md`.
-2. Read `README.md`, `PRD.md`, `TRD.md`, `AUTH.md`, and `DATABASE.md` first.
+1. Follow root `WORKFLOW.md`.
+2. Follow `.humanlayer/workflow.md` only for HumanLayer-specific task setup.
+3. Read `README.md`, `PRD.md`, `TRD.md`, `AUTH.md`, and `DATABASE.md` only as needed by the task.
 3. Treat the latest manual-payment flow as source of truth.
 4. Keep buyer/seller as transaction-level roles.
 5. Keep admin/finance/super-admin as future global/internal roles.

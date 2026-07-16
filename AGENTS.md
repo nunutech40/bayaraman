@@ -10,6 +10,12 @@ Purpose:
 
 HumanLayer login is not required to use this file. HumanLayer is optional orchestration only.
 
+Main reusable project workflow:
+
+- `WORKFLOW.md`
+
+Use `WORKFLOW.md` for product phase, engineering phase, and per-ticket execution.
+
 ## Project Summary
 
 BayarAman is a rekber-style trust layer for transactions outside marketplaces.
@@ -48,6 +54,7 @@ Read by task type:
 
 | Task type | Also read |
 | --- | --- |
+| Workflow/process | `WORKFLOW.md` |
 | Product/flow changes | `README.md`, `PRD.md`, `TRD.md` |
 | Frontend/prototype/app UI | `README.md`, `PRD.md`, `TRD.md`, `prototype/` |
 | Auth/roles/permissions | `AUTH.md`, `DATABASE.md` |
@@ -170,7 +177,9 @@ Do not use older states such as:
 
 ## Implementation Workflow
 
-Use this for every coding task.
+Use `WORKFLOW.md` for the full reusable process.
+
+Short version for every coding task:
 
 ### 1. Plan
 
@@ -261,4 +270,3 @@ If HumanLayer auth is down:
 
 - Use `AGENTS.md` directly with Codex or another coding agent.
 - Optionally create manual worktrees/branches with `git worktree`.
-
