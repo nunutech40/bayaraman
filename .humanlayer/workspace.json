@@ -1,0 +1,13 @@
+{
+  "pathTemplate": "~/.humanlayer/workspaces/{{ TASKSLUG }}/{{ REPOBASENAME }}",
+  "branchTemplate": "hl/{{ TASKSLUG }}",
+  "sourceRef": "main",
+  "setupCommand": "",
+  "repos": [
+    {
+      "localPath": ".",
+      "description": "BayarAman product docs, prototype, and future Next.js app",
+      "primary": true
+    }
+  ]
+}

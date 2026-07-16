@@ -120,6 +120,42 @@ GitHub Pages setup:
 
 After GitHub finishes publishing, share the prototype URL above.
 
+## HumanLayer Coding Workflow
+
+This repo is prepared for HumanLayer task workspaces.
+
+Shared config:
+
+- `.humanlayer/workspace.json`
+
+Local-only override, ignored by git:
+
+- `.humanlayer/workspace.local.json`
+
+Current setup is intentionally simple because the project is still docs + static prototype:
+
+- single repo workspace
+- task branches use `hl/{{ TASKSLUG }}`
+- worktrees are created under `~/.humanlayer/workspaces/{{ TASKSLUG }}/{{ REPOBASENAME }}`
+- `setupCommand` is empty until the Next.js app is scaffolded
+
+Recommended task flow:
+
+1. Create one HumanLayer task per implementation slice.
+2. Use this repository as the selected repo.
+3. Let HumanLayer create an isolated worktree and task branch.
+4. Review changes, then merge/push from the task branch.
+
+Suggested first implementation slices:
+
+1. Scaffold Next.js + TypeScript app.
+2. Move `prototype/` flow into real app routes/components.
+3. Add PostgreSQL schema with Prisma or Drizzle based on `DATABASE.md`.
+4. Implement manual payment claim and admin payment review.
+5. Implement WhatsApp ops tracking, buyer OTP confirmation, and manual payout recording.
+
+After the app has dependencies, update `.humanlayer/workspace.json` with the real setup command, for example `npm install`.
+
 ## Current Status
 
 This repo is still in product definition stage. There is no application code yet.
