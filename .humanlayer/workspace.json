@@ -2,7 +2,7 @@
   "pathTemplate": "~/.humanlayer/workspaces/{{ TASKSLUG }}/{{ REPOBASENAME }}",
   "branchTemplate": "hl/{{ TASKSLUG }}",
   "sourceRef": "main",
-  "setupCommand": "",
+  "setupCommand": "test -f package.json && npm install || true",
   "repos": [
     {
       "localPath": ".",
