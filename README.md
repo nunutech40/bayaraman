@@ -1,173 +1,90 @@
 # BayarAman
 
-BayarAman is a rekber-style trust layer for online transactions outside marketplaces. The current MVP uses manual payment collection to a BayarAman-owned bank account, manual admin payment checking, WhatsApp coordination, buyer OTP confirmation, and manual seller payout/pencairan.
+Repository ini sedang mendefinisikan ulang produk BayarAman dengan workflow artifact bertahap. Product Brief v0.7, User Journey v0.4, dan UX Flow v0.1 sudah disetujui; User Requirements v0.2 sedang direview dan menunggu perubahan upstream untuk cancellation.
 
-## What This Repo Contains
+## Tahap Saat Ini
 
-- `PRD.md`: Product Requirements Document for the manual-payment rekber MVP.
-- `TRD.md`: Technical Requirements Document with flowcharts and sequence diagrams.
-- `AUTH.md`: Auth, role, tier, Google OAuth, and verification design.
-- `DATABASE.md`: PostgreSQL database design for auth, transactions, manual payments, WA group tracking, confirmation OTP, payout, and audit.
-- `BayarAman-bisnis-flow-infographic.html/png`: Business-flow infographic.
-- `BayarAman-midtrans-tech-flow-infographic.html/png`: Older Midtrans technology infographic; kept as historical reference until replaced.
-- `requirenment/`: Original exported product, journey, PRD, and business model drafts.
+- Tahap aktif: review User Requirements dengan change request cancellation.
+- Source aktif: Product Brief v0.7, User Journey v0.4, dan UX Flow v0.1 (`Approved`).
+- Draft aktif: `docs/product/03-user-requirements.md` v0.2; seluruh open decision sebelumnya sudah dikonfirmasi.
+- Sebelum User Requirements disetujui, cancellation harus direvisi dan disetujui berurutan di Product Brief, User Journey, dan UX Flow.
+- Dokumen lama berada di `docs/archive/` dan tidak menjadi konteks aktif.
+- Jangan lanjut ke UI/UX Design atau QA Scenarios sebelum User Requirements disetujui secara eksplisit.
 
-## Product Summary
+## Urutan Sumber
 
-BayarAman is not a marketplace, wallet, or payment gateway. BayarAman is a trust layer:
+Saat membuat Product Brief:
 
-1. Seller or buyer creates a BayarAman transaction.
-2. Buyer pays to BayarAman's bank account.
-3. Buyer clicks `Sudah Bayar`.
-4. Admin checks whether the payment has arrived.
-5. If payment is valid, admin creates a WhatsApp group for buyer, seller, and BayarAman.
-6. Admin announces in the WhatsApp group that payment has been received.
-7. Seller ships goods/services.
-8. Seller and buyer report in the group when the order is complete.
-9. Admin sends a buyer confirmation link in the group.
-10. Buyer confirms with OTP through email or WhatsApp.
-11. Admin manually transfers payout/pencairan to seller.
+1. Arahan product owner yang diberikan untuk tahap tersebut.
+2. Baseline di `requirenment/`.
+3. Template Product Brief.
 
-Buyer-seller complaints are handled outside the system during MVP, mainly in the WhatsApp group. BayarAman records the final outcome: release, refund, split settlement, or cancelled.
+Setelah sebuah artifact disetujui, artifact tersebut menjadi sumber utama tahap berikutnya. Prototype dan arsip tidak menjadi sumber keputusan produk kecuali diminta secara khusus.
 
-Transactions that have not been paid expire in 1x24 hours.
+## Perubahan Cancellation
 
-## MVP Direction
+Cancellation dimulai dari revisi Product Brief, bukan langsung dari UX Flow. Gunakan prompt berikut untuk membuka satu tahap pertama saja:
 
-Included in MVP:
+```text
+Use $bayaraman-workflow.
+Revisi docs/product/00-product-brief.md menggunakan
+docs/product/templates/product-brief-template.md untuk menambahkan cancellation.
+Gunakan rekomendasi cancellation terakhir sebagai proposal dan tandai kebijakan
+yang masih membutuhkan konfirmasi saya.
+Naikkan versi dan pertahankan status Draft.
+Jangan ubah User Journey, UX Flow, atau User Requirements dulu.
+```
 
-- Seller-created transaction.
-- Buyer-created transaction with seller contact and seller bank account input.
-- Manual buyer payment to BayarAman bank account.
-- `Sudah Bayar` action by buyer.
-- Admin manual payment checking.
-- 1x24 hour payment expiry for unpaid transactions.
-- WhatsApp group link/name tracking.
-- Buyer confirmation link.
-- OTP confirmation by email or WhatsApp.
-- Manual seller payout/pencairan recording.
-- Minimal issue/outcome recording.
+## Workflow Lokal
 
-Not MVP:
+Workflow berjalan tanpa akun atau login HumanLayer.
 
-- Midtrans/payment gateway integration.
-- Full automated bank mutation reconciliation.
-- Full admin dashboard/login.
-- In-app dispute resolution.
-- Automated seller payout/disbursement.
-- Wallet/balance.
-- Marketplace/storefront.
+```text
+Product Brief
+-> User Journey
+-> UX Flow
+-> User Requirements
+-> UI/UX Design
+-> QA Scenarios
+-> PRD
+-> Technical Design
+-> Tickets
+-> Research -> Plan -> Review -> Implement -> Validate
+```
 
-## Manual Payment Usage
+- **UX Flow** memetakan Journey menjadi layar/experience node, keputusan, perpindahan channel, jalur gagal, dan pekerjaan manual. Tahap ini belum menentukan visual final.
+- **UI/UX Design** memetakan UX Flow dan User Requirements menjadi spesifikasi layar, field, action, permission, seluruh state penting, responsive/accessibility, serta wireframe atau prototype yang direview.
+- Wireframe/prototype baru dibuat di tahap UI/UX Design. Prototype lama tidak otomatis menjadi requirement.
 
-BayarAman uses a manual payment flow for MVP:
+- Aturan konteks agent: `AGENTS.md`
+- Urutan dan gate tahap: `WORKFLOW.md`
+- Skill Codex: `.agents/skills/bayaraman-workflow/SKILL.md`
+- Template: `docs/product/templates/`, `docs/engineering/templates/`, dan `docs/execution/templates/`
 
-- Buyer pays to BayarAman's bank account.
-- Buyer clicks `Sudah Bayar`.
-- Admin checks incoming payment manually.
-- Payment is considered confirmed only after admin verification.
-- If payment is not received within 1x24 hours, the transaction expires.
+Prompt setelah User Requirements selesai direview:
 
-Important boundary:
+```text
+Use $bayaraman-workflow.
+Saya approve versi terbaru docs/product/03-user-requirements.md.
+Ubah statusnya menjadi Approved, lalu buat UI/UX Design Spec dan wireframe/prototype saja.
+```
 
-BayarAman remains the trust workflow owner: transaction state, payment checking, WhatsApp coordination, confirmation, issue outcome, release/refund decision, payout/pencairan, and audit trail stay inside BayarAman.
+## Prototype
 
-## Business Model
+Prototype statis berada di `prototype/` dan hanya menjadi demo UI/implementasi historis sampai ada artifact produk baru yang disetujui.
 
-- Transaction fee: 2%.
-- Minimum fee: Rp20.000.
-- Maximum fee: Rp100.000.
-- Minimum transaction amount: Rp100.000.
-- Fee payer options: buyer, seller, or split.
-- Free user limits:
-  - Max per transaction: Rp1.000.000.
-  - Daily limit: Rp1.500.000.
-  - Monthly limit: Rp3.000.000.
-- Pro target pricing:
-  - Rp100.000/month.
-  - Rp1.000.000/year.
+- Lokal: buka `prototype/index.html`
+- Publik: `https://nunutech40.github.io/bayaraman/prototype/`
 
-## Key Documents
+GitHub Pages menggunakan branch `main` dan folder `/(root)`.
 
-Start here:
+## Struktur
 
-1. `PRD.md`
-2. `TRD.md`
-3. `AUTH.md`
-4. `DATABASE.md`
-5. `BayarAman-bisnis-flow-infographic.png`
-
-## Frontend Prototype
-
-The static flow prototype lives in `prototype/`.
-
-Local URL while running a static server:
-
-- `http://127.0.0.1:8081/`
-
-Public GitHub Pages URL after Pages is enabled:
-
-- `https://nunutech40.github.io/bayaraman/prototype/`
-
-GitHub Pages setup:
-
-1. Open the GitHub repository settings.
-2. Go to `Pages`.
-3. Set source to `Deploy from a branch`.
-4. Select branch `main`.
-5. Select folder `/root`.
-6. Save.
-
-After GitHub finishes publishing, share the prototype URL above.
-
-## HumanLayer Coding Workflow
-
-This repo is prepared for AI-assisted coding workflows.
-
-Primary reusable agent instructions:
-
-- `AGENTS.md`
-
-HumanLayer is optional orchestration. You do not need HumanLayer login to use `AGENTS.md` with Codex or another coding agent.
-
-Shared config:
-
-- `.humanlayer/workspace.json`
-
-Local-only override, ignored by git:
-
-- `.humanlayer/workspace.local.json`
-
-Current setup is intentionally simple because the project is still docs + static prototype:
-
-- single repo workspace
-- task branches use `hl/{{ TASKSLUG }}`
-- worktrees are created under `~/.humanlayer/workspaces/{{ TASKSLUG }}/{{ REPOBASENAME }}`
-- `setupCommand` is empty until the Next.js app is scaffolded
-
-Recommended task flow:
-
-1. Create one HumanLayer task per implementation slice.
-2. Use this repository as the selected repo.
-3. Let HumanLayer create an isolated worktree and task branch.
-4. Review changes, then merge/push from the task branch.
-
-Suggested first implementation slices:
-
-1. Scaffold Next.js + TypeScript app.
-2. Move `prototype/` flow into real app routes/components.
-3. Add PostgreSQL schema with Prisma or Drizzle based on `DATABASE.md`.
-4. Implement manual payment claim and admin payment review.
-5. Implement WhatsApp ops tracking, buyer OTP confirmation, and manual payout recording.
-
-After the app has dependencies, update `.humanlayer/workspace.json` with the real setup command, for example `npm install`.
-
-## Current Status
-
-This repo is still in product definition stage. There is no application code yet.
-
-Recommended next step:
-
-- Turn `PRD.md` and `TRD.md` into implementation tickets.
-- Confirm the exact operational bank account and payment-checking SOP.
-- Build transaction creation, manual payment marker, admin payment review, WA ops record, buyer confirmation, and manual payout recording.
+```text
+requirenment/              baseline produk untuk Product Brief baru
+docs/product/templates/    template artifact produk
+docs/engineering/          template desain teknis dan ticket
+docs/execution/            template research, plan, review, validation
+docs/archive/              dokumen lama; tidak dibaca otomatis
+prototype/                 prototype UI historis
+```

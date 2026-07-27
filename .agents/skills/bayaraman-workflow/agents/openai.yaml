@@ -1,0 +1,4 @@
+interface:
+  display_name: "BayarAman Workflow"
+  short_description: "Run BayarAman product, UI/UX, and engineering stages"
+  default_prompt: "Use $bayaraman-workflow to run only the BayarAman stage requested by the user with minimal context."

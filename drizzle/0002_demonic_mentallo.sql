@@ -1,0 +1,2 @@
+ALTER TABLE "payment_instructions" ADD COLUMN "destination_account_value" text NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "payment_claims_one_active_idx" ON "payment_claims" USING btree ("transaction_id") WHERE "payment_claims"."active" = true;

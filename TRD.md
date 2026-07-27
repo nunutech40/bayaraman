@@ -1,376 +1,429 @@
-# Technical Requirements Document (TRD)
-
-# BayarAman MVP: Manual Payment Review + Manual Payout
+# BayarAman Technical Design Document
 
 ## 1. Document Control
 
-- Product: BayarAman
-- Version: TRD v4.0
-- Status: Draft aligned with PRD v4.0
-- Source PRD: `PRD.md`
-- Last updated: 2026-07-14
+```text
+Feature/system: BayarAman MVP physical-goods trusted transaction
+Version: TRD v1.2
+Status: Approved
+Author/reviewer: Engineering Team / Product Owner BayarAman
+Approved by: Product Owner BayarAman
+Approved on: 2026-07-26
+Source PRD: PRD.md v0.2 (Approved)
+Source Product Brief: docs/product/00-product-brief.md v0.10 (Approved)
+Source Journey: docs/product/01-user-journey.md v0.6 (Approved)
+Source UX Flow: docs/product/02-ux-flow.md v0.3 (Approved)
+Source Requirements: docs/product/03-user-requirements.md v0.4 (Approved)
+Source UI/UX: docs/product/04-ui-ux-spec.md v0.2 (Approved)
+Source QA: docs/product/05-qa-scenarios.md v0.2 (Approved)
+Last updated: 2026-07-26
+```
 
-## 2. Technical Summary
+This document defines implementation boundaries. It does not create product
+policy, approve production money movement, or make legacy tickets
+authoritative.
 
-BayarAman MVP uses manual payment collection and manual operations for fulfillment coordination and seller payout/pencairan. The backend creates a transaction and expected payment instruction, buyer clicks `Sudah Bayar`, admin manually checks incoming payment, records the transaction as paid, then operator creates a WhatsApp group, sends buyer confirmation link, verifies OTP, and records manual payout to seller.
+## 2. Technical Outcome
 
-Transactions that remain unpaid expire after 1x24 hours.
+Build a typed Next.js web application for one Buyer and one Seller account per
+transaction, with Admin-operated external handoffs. Midtrans is the primary
+payment provider. BayarAman accepts payment as authoritative only after a
+validated Midtrans `settlement` with `fraud_status=accept`. Seller payout is a
+separate financial operation.
 
-## 3. Technology Stack
+Product roles are only `BUYER`, `SELLER`, and `ADMIN`. Ops, Finance,
+Supervisor, and Reviewer are internal Admin task assignments, never product
+roles or participant permissions.
 
-- Frontend/backend: Next.js
-- Language: TypeScript
-- ORM: Prisma or Drizzle
-- Database: PostgreSQL
-- Auth: Auth.js/NextAuth.js with email/password credentials and Google OAuth
-- Password hashing: Argon2id preferred, bcrypt acceptable
-- Manual payment collection: BayarAman bank account
-- Email OTP: Resend, SendGrid, Postmark, or equivalent
-- WhatsApp OTP: WhatsApp Business API provider later; manual/operator fallback acceptable for MVP
-- File storage: optional for payout references/proofs; S3/R2/Supabase Storage
-- Queue/cron: useful for payment expiry checks, OTP cleanup, reminders, and operational SLA reminders
+## 3. Architecture
 
-## 4. System Architecture
+| Boundary | Decision | Constraint |
+| --- | --- | --- |
+| Web runtime | Next.js App Router, TypeScript strict | Server authorization is mandatory |
+| UI | Tailwind CSS, shared components, constrained mobile-width surface | Desktop does not become a wide dashboard |
+| Persistence | PostgreSQL-compatible database | Transactions, unique constraints, immutable evidence |
+| ORM | Drizzle ORM and migrations | Explicit SQL transaction boundaries |
+| Validation | Zod at route/command boundaries | Invalid input rejected before domain mutation |
+| Session | Signed JWT/JWS with `jose`, HS256, in HTTP-only `bayaraman_session` cookie | SameSite=Lax; Secure only in production; 7-day expiry; claims are accountId, sessionId, productRole, issuedAt, expiresAt |
+| Jobs | Secured scheduler invocation of idempotent jobs | No assumption of a persistent worker |
+| Provider | Server-side Midtrans adapter | Production credentials never reach client |
+| Audit | Append-only audit writer | Financial evidence and corrections cannot be overwritten |
+
+All state-changing commands flow through a domain service. Routes authenticate,
+validate, authorize, and call the service. They do not mutate tables directly.
+
+Authentication uses `AUTH_SESSION_SECRET` with at least 32 random bytes. The
+application fails outside test when the secret is missing or too short. Passwords
+use Argon2id and normalized lowercase email is the login identifier. Secret
+rotation invalidates existing sessions. WhatsApp verification uses a six-digit,
+five-minute, hashed, single-use OTP; maximum five attempts and a 60-second
+request cooldown apply. Invalid or expired OTPs never set `whatsappVerifiedAt`.
+
+## 4. Module And Repository Boundary
 
 ```text
-Buyer/Seller Browser
-        |
-        v
-BayarAman Web App
-        |
-        v
-BayarAman Backend/API
-   |        |          |
-   |        |          +--> Email/OTP provider
-   |        +-------------> PostgreSQL
-   +----------------------> Optional object storage
-
-Manual ops:
-- buyer pays to BayarAman bank account
-- buyer clicks Sudah Bayar
-- admin checks incoming payment manually
-- operator creates WhatsApp group
-- operator sends confirmation link
-- operator manually transfers/pays out seller
+src/app/                         Next.js routes and mobile-width pages
+src/components/                  UI components mapped to UI-SCR IDs
+src/server/auth/                 session and server authorization
+src/server/domain/transaction/   aggregate and approved state guards
+src/server/domain/invitation/    invitation and participant join
+src/server/domain/payment/       Midtrans invoice/status/reconciliation
+src/server/domain/operations/    WhatsApp, cancellation, complaint, risk
+src/server/domain/finance/       refund, payout, split operations
+src/server/providers/midtrans/   Invoice, webhook, status, refund adapter
+src/server/jobs/                 expiry, reminder, SLA escalation
+src/server/db/                   Drizzle schema and migrations
+src/server/audit/                append-only audit writer
+src/server/validation/           Zod command schemas
+tests/                            unit, integration, route, and contract tests
 ```
 
-## 5. Core Technical Flows
+## 5. State And Result Model
 
-### 5.1 Business Model Flow
+Transaction state and provider/financial result are separate. Use only
+transaction states already approved by the product artifacts:
 
-```mermaid
-flowchart LR
-  A[Buyer and seller deal outside marketplace] --> B[One party creates BayarAman transaction]
-  B --> C[Buyer pays to BayarAman bank account]
-  C --> D[Buyer clicks Sudah Bayar]
-  D --> E[Admin verifies incoming payment]
-  E --> F[Operator creates WA trust room]
-  F --> G[Seller fulfills order]
-  G --> H[Buyer confirms with OTP]
-  H --> I[BayarAman keeps fee]
-  I --> J[Operator manually pays out seller]
-```
+`WAITING_COUNTERPARTY`, `WAITING_COUNTERPARTY_DATA`,
+`WAITING_BUYER_PAYMENT`, `PAYMENT_UNDER_REVIEW`, `PAYMENT_CONFIRMED`,
+`PAYMENT_EXCEPTION_REVIEW`, `PAYMENT_EXPIRED`, `READY_FOR_FULFILLMENT`,
+`WAITING_COMPLETION_REPORTS`, `WAITING_OTHER_COMPLETION_REPORT`,
+`READY_FOR_BUYER_CONFIRMATION`, `WAITING_BUYER_CONFIRMATION`,
+`BUYER_CONFIRMATION_OVERDUE`, `READY_FOR_PAYOUT`, `PAYOUT_ON_HOLD`,
+`PAYOUT_PROCESSING`, `PAID_OUT`, `CANCELLATION_REQUESTED`,
+`CANCELLATION_PENDING_RECONCILIATION`, `FUNDED_CANCELLATION_REVIEW`,
+`REFUND_READY`, `REFUND_PROCESSING`, `REFUNDED`, `SPLIT_PROCESSING`,
+`SPLIT_SETTLED`, `MANUAL_REVIEW_REQUIRED`, `RISK_HOLD`, and `CANCELLED`.
 
-### 5.2 Seller-Created App Flow
+Financial operation result is only `PROCESSING`, `SUCCESS`, `FAILED`, or
+`UNKNOWN`:
 
-```mermaid
-flowchart TD
-  S[Seller creates transaction] --> A[Seller enters amount, agreement, buyer contact, seller bank]
-  A --> B[System creates transaction code/link]
-  B --> C[Seller shares link to buyer]
-  C --> D[Buyer opens link and logs in/verifies]
-  D --> E[System shows BayarAman bank payment instruction]
-  E --> F[Buyer pays to BayarAman bank account]
-  F --> G[Buyer clicks Sudah Bayar]
-  G --> H[Status: PAYMENT_UNDER_REVIEW]
-  H --> I[Admin checks incoming payment]
-  I --> J{Payment valid?}
-  J -->|No| K[Return to WAITING_BUYER_PAYMENT or manual review]
-  J -->|Yes| L[Status: PAYMENT_CONFIRMED]
-  L --> M[Operator creates WA group and stores link]
-  M --> N[Operator announces payment received]
-  N --> O[Seller fulfills order]
-  O --> P[Buyer and seller report complete in WA group]
-  P --> Q[Operator sends confirmation link]
-  Q --> R[Buyer OTP confirmation]
-  R --> T[PAYOUT_PENDING]
-  T --> U[Operator records manual payout]
-  E --> V[Unpaid after 1x24 hours]
-  V --> W[PAYMENT_EXPIRED]
-```
+- `FAILED` may retry after the operation is safely closed.
+- `UNKNOWN` must be reconciled before retry.
+- Only `SUCCESS` with immutable provider/bank reference may produce `PAID_OUT`,
+  `REFUNDED`, or `SPLIT_SETTLED`.
+- Midtrans settlement never automatically produces `PAID_OUT`.
 
-### 5.3 Buyer-Created App Flow
+Midtrans provider statuses are data, not new BayarAman transaction states:
 
-```mermaid
-flowchart TD
-  B[Buyer creates transaction] --> A[Buyer enters deal detail, seller contact, seller bank]
-  A --> F[System shows BayarAman bank payment instruction]
-  F --> G[Buyer pays to BayarAman bank account]
-  G --> H[Buyer clicks Sudah Bayar]
-  H --> I[Admin checks incoming payment]
-  I --> J{Payment valid?}
-  J -->|No| K[Return to WAITING_BUYER_PAYMENT or manual review]
-  J -->|Yes| L[Operator creates WA group]
-  L --> M[Operator announces payment received]
-  M --> N[Seller fulfills order]
-  N --> O[Buyer and seller report complete in WA group]
-  O --> P[Operator sends confirmation link]
-  P --> Q[Buyer confirms with OTP]
-  Q --> R[Operator pays out seller manually]
-  F --> S[Unpaid after 1x24 hours]
-  S --> T[PAYMENT_EXPIRED]
-```
+- `settlement` plus `fraud_status=accept`: authoritative payment.
+- `capture`: provider success but not settlement for payout eligibility.
+- `pending`, `deny`, `cancel`, `failure`, `expire`: non-paid outcomes.
+- Unknown, invalid, or ambiguous events: reconciliation/manual-review path.
 
-### 5.4 Manual Payment Review Sequence
+Every mutation checks `state_version`, expected state, actor permission, and
+cutoff. A successful mutation increments `state_version` atomically.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Buyer
-  actor Admin
-  participant Web as BayarAman Web
-  participant API as BayarAman API
-  participant DB as PostgreSQL
-  participant Bank as BayarAman Bank Account
+## 6. Core State Transitions
 
-  Buyer->>Web: Open payable transaction
-  Web->>API: GET /api/transactions/:code
-  API->>DB: Load transaction and expected payment amount
-  API-->>Web: Payment instruction + expiry time
-  Buyer->>Bank: Transfer to BayarAman account
-  Buyer->>Web: Click Sudah Bayar
-  Web->>API: POST /api/transactions/:id/payment-claim
-  API->>DB: Set status PAYMENT_UNDER_REVIEW and store claimed_at
-  Admin->>Bank: Check incoming payment manually
-  Admin->>Web: Record payment review result
-  Web->>API: POST /api/ops/transactions/:id/payment-review
-  API->>DB: Validate expected amount and current status
-  API->>DB: If valid, set payment status CONFIRMED and transaction PAYMENT_CONFIRMED
-```
+| Current state | Trigger | Guard | Result |
+| --- | --- | --- | --- |
+| `WAITING_COUNTERPARTY` | Opposite participant joins | Valid invitation, distinct account, opposite role | `WAITING_COUNTERPARTY_DATA` |
+| `WAITING_COUNTERPARTY_DATA` | Both role datasets complete | Terms validated and frozen | `WAITING_BUYER_PAYMENT` after invoice is available |
+| `WAITING_BUYER_PAYMENT` | Midtrans invoice deadline passes | No authoritative settlement | `PAYMENT_EXPIRED` |
+| `WAITING_BUYER_PAYMENT` | Valid Midtrans settlement event | Signature/order/amount/fraud valid; current state is not expired, cancelled, or financially terminal | `PAYMENT_CONFIRMED` |
+| `WAITING_BUYER_PAYMENT` | Provider ambiguity or exception | No authority inferred | Remains waiting or `MANUAL_REVIEW_REQUIRED` |
+| `PAYMENT_CONFIRMED` | Admin records payment announcement/group checkpoint | Correct participants and evidence | `READY_FOR_FULFILLMENT` |
+| fulfillment states | Seller/Buyer completion checkpoints | Separate Admin-recorded checkpoints | `READY_FOR_BUYER_CONFIRMATION` |
+| `WAITING_BUYER_CONFIRMATION` | Valid WhatsApp OTP | Frozen Buyer number, valid unexpired OTP | `READY_FOR_PAYOUT` |
+| `READY_FOR_PAYOUT` | Complaint/risk evidence | No automatic adjudication | `PAYOUT_ON_HOLD` or `RISK_HOLD` |
+| `READY_FOR_PAYOUT` | Start payout | Eligible, authorized, no hold | `PAYOUT_PROCESSING` |
+| `PAYOUT_PROCESSING` | Financial `SUCCESS` | Immutable reference | `PAID_OUT` |
+| eligible cancellation state | Cancellation request | State/cutoff/actor valid | Direct `CANCELLED`, or reconciliation state |
+| `CANCELLATION_PENDING_RECONCILIATION` | Provider result | Midtrans status authoritative/definitive | `CANCELLED`, funded review, or manual review |
+| `FUNDED_CANCELLATION_REVIEW` | Verified not-shipped evidence | Separate WA/Admin checkpoints | `REFUND_READY` or hold |
+| `FUNDED_CANCELLATION_REVIEW` | 1x24h response timeout | No automatic money movement | `MANUAL_REVIEW_REQUIRED` |
+| `REFUND_READY` | Authorized refund starts | Destination and calculation frozen | `REFUND_PROCESSING` |
+| `REFUND_PROCESSING` | Financial `SUCCESS` | Immutable reference | `REFUNDED` |
+| any eligible state | Prohibited/fraud signal | Evidence and Admin task assignment | `RISK_HOLD` |
 
-### 5.5 Payment Expiry Sequence
+Late Midtrans success after expiry or cancellation enters reconciliation/refund
+exception and never revives invitation, payment, fulfillment, confirmation, or
+payout actions. Cancellation withdrawal/rejection may restore only a prior
+state that remains valid after a fresh version and cutoff check.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant Cron as Scheduler/Cron
-  participant API as BayarAman API
-  participant DB as PostgreSQL
+No Midtrans event may mutate a transaction already in `PAYMENT_EXPIRED`,
+`CANCELLED`, `REFUND_PROCESSING`, `REFUNDED`, `PAYOUT_PROCESSING`, `PAID_OUT`,
+or another terminal financial boundary. It is stored as late/exception evidence
+and routed to refund/reconciliation without transaction revival.
 
-  Cron->>API: Run payment expiry job
-  API->>DB: Find WAITING_BUYER_PAYMENT transactions past expires_at
-  API->>DB: Mark transactions PAYMENT_EXPIRED
-  API->>DB: Append audit log
-```
+## 7. Midtrans Integration
 
-### 5.6 WA Group and Fulfillment Sequence
+### 7.1 Invoice creation
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Operator
-  actor Buyer
-  actor Seller
-  participant Web as BayarAman Ops Route
-  participant API as BayarAman API
-  participant DB as PostgreSQL
-  participant WA as WhatsApp
+After both participant datasets are complete, the server freezes transaction
+terms and creates one active Midtrans invoice using the Invoice API with
+`payment_type: payment_link`.
 
-  Operator->>WA: Create group with buyer, seller, operator
-  Operator->>Web: Paste group name/link
-  Web->>API: POST /api/ops/transactions/:id/wa-group
-  API->>DB: Store wa_group_url, wa_group_created_at
-  Operator->>WA: Announce payment received
-  Web->>API: POST /api/ops/transactions/:id/payment-announcement
-  API->>DB: Set status PAYMENT_ANNOUNCED after operator announcement
-  Seller->>WA: Send shipping/progress info
-  Buyer->>WA: Confirms item/service completion verbally
-```
+Persist, server-side:
 
-### 5.7 Buyer Confirmation OTP Sequence
+- BayarAman transaction ID and deterministic Midtrans order ID.
+- Midtrans invoice/payment-link ID and hosted URL.
+- Frozen amount, currency, issued timestamp, absolute BayarAman deadline,
+  provider `due_date` when supported, and idempotency reference.
+- Provider status and reconciliation metadata.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Operator
-  actor Buyer
-  participant Web as BayarAman Web
-  participant API as BayarAman API
-  participant OTP as Email/WhatsApp OTP Provider
-  participant DB as PostgreSQL
+Invoice creation is idempotent. A duplicate request returns the existing
+active invoice result. Amount, order ID, issued time, and BayarAman deadline
+are immutable. Retry never resets the 1x24-hour deadline.
 
-  Operator->>Web: Generate buyer confirmation link
-  Web->>API: POST /api/ops/transactions/:id/confirmation-link
-  API->>DB: Store token_hash, expiry, status WAITING_BUYER_CONFIRMATION
-  Operator->>Buyer: Send link in WA group
-  Buyer->>Web: Open confirmation link
-  Web->>API: POST /api/confirmations/:token/request-otp
-  API->>OTP: Send OTP to buyer email or WhatsApp
-  API->>DB: Store otp_hash, expires_at, attempts=0
-  Buyer->>Web: Submit OTP
-  Web->>API: POST /api/confirmations/:token/verify
-  API->>DB: Validate token, OTP, expiry, attempts
-  API->>DB: Set status BUYER_CONFIRMED and PAYOUT_PENDING
-```
+Midtrans secret key, signature secret, raw credentials, and provider auth
+headers are server-only and must not enter client responses, logs, or audit.
 
-### 5.8 Manual Payout/Pencairan Sequence
+### 7.2 Hosted checkout and status refresh
 
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Operator
-  participant Web as BayarAman Ops Route
-  participant API as BayarAman API
-  participant DB as PostgreSQL
-  participant Bank as Operator Bank App
+Buyer opens the hosted Midtrans payment page from `UI-SCR-010`. BayarAman
+offers `Cek status pembayaran` only as a status refresh/request. It cannot
+mark payment paid and there is no `Sudah Bayar` payment-confirmation action.
 
-  Operator->>Web: Open payout-eligible transaction
-  Web->>API: GET payout detail
-  API-->>Web: Seller bank, seller net, fee, buyer confirmation
-  Operator->>Bank: Transfer seller payout manually
-  Operator->>Web: Record payout result/reference
-  Web->>API: POST /api/ops/transactions/:id/payout
-  API->>DB: Store payout status, paid_at, reference, audit log
-  API->>DB: Set transaction PAID_OUT when payout succeeds
-```
+### 7.3 Webhook and Get Status API
 
-## 6. Transaction State Model
+The webhook handler must:
 
-```mermaid
-stateDiagram-v2
-  [*] --> DRAFT
-  DRAFT --> WAITING_BUYER_PAYMENT
-  WAITING_BUYER_PAYMENT --> PAYMENT_UNDER_REVIEW
-  WAITING_BUYER_PAYMENT --> PAYMENT_EXPIRED
-  PAYMENT_UNDER_REVIEW --> PAYMENT_CONFIRMED
-  PAYMENT_UNDER_REVIEW --> WAITING_BUYER_PAYMENT
-  PAYMENT_UNDER_REVIEW --> PAYMENT_INVALID
-  PAYMENT_UNDER_REVIEW --> MANUAL_REVIEW
-  PAYMENT_CONFIRMED --> WA_GROUP_CREATED
-  WA_GROUP_CREATED --> PAYMENT_ANNOUNCED
-  PAYMENT_ANNOUNCED --> SELLER_SHIPPED
-  SELLER_SHIPPED --> WAITING_BUYER_CONFIRMATION
-  SELLER_SHIPPED --> ISSUE_REPORTED
-  ISSUE_REPORTED --> MANUAL_REVIEW
-  MANUAL_REVIEW --> WAITING_BUYER_CONFIRMATION
-  MANUAL_REVIEW --> REFUND_PENDING
-  MANUAL_REVIEW --> SPLIT_SETTLEMENT
-  MANUAL_REVIEW --> CANCELLED
-  WAITING_BUYER_CONFIRMATION --> BUYER_CONFIRMED
-  BUYER_CONFIRMED --> PAYOUT_PENDING
-  PAYOUT_PENDING --> PAYOUT_PROCESSING
-  PAYOUT_PROCESSING --> PAID_OUT
-  PAYOUT_PROCESSING --> PAYOUT_FAILED
-  REFUND_PENDING --> REFUNDED
-  PAID_OUT --> [*]
-  REFUNDED --> [*]
-```
+1. Authenticate the request and validate Midtrans signature.
+2. Validate order ID, transaction ID, amount, currency, and fraud status.
+3. Store a provider event identity before applying it.
+4. Apply events idempotently under transaction state/version guard.
+5. Reject or retain invalid, duplicate, delayed, and out-of-order events
+   without overwriting an already authoritative result.
+6. Use Get Status API reconciliation for missing, ambiguous, or UNKNOWN state.
+7. Emit an audit event and reconciliation task for every accepted exception.
 
-## 7. Core Modules
+Webhook delivery is not authority by itself. Only validated
+`settlement + fraud_status=accept` may move a transaction to
+`PAYMENT_CONFIRMED`. Provider outage, timeout, signature failure, amount
+mismatch, and UNKNOWN never infer paid.
 
-### Auth and Identity
+Each provider event stores `providerEventId`, `payloadHash`, `eventTime`,
+`receivedAt`, order ID, amount, transaction status, fraud status, signature
+validation result, and reconciliation status. Duplicate identity is
+`providerEventId` or payload hash. Event precedence is:
 
-- Email/password registration.
-- Google OAuth registration/login.
-- Email verification.
-- Phone verification.
-- Buyer confirmation OTP.
-- Transaction-level buyer/seller role.
-- Admin/finance login reserved for Phase 2.
+1. A validated `settlement + fraud_status=accept` is authoritative and
+   immutable for payment authority.
+2. `pending`, `capture`, `deny`, `cancel`, `failure`, and `expire` can never
+   downgrade or overwrite an authoritative settlement.
+3. A delayed event is older when its provider event time is older than the
+   stored authoritative event; an out-of-order event is stored but cannot
+   mutate the canonical result.
+4. Equal-time or conflicting events are not resolved by arrival order. They
+   open Get Status API reconciliation and remain `UNKNOWN`/manual review until
+   an authoritative result is available.
 
-### Transaction
+The event insert and canonical payment mutation use one database transaction,
+unique provider-event constraint, state-version guard, and a conditional
+canonical update. A terminal/authoritative payment record cannot transition
+back to a non-authoritative provider result.
 
-- Create seller-created transaction.
-- Create buyer-created transaction.
-- Generate transaction code/link.
-- Store seller contact and seller payout bank for buyer-created transaction.
-- Store seller payout bank account.
-- Set payment expiry to 1x24 hours after transaction becomes payable.
-- Enforce state transitions.
+## 8. Expiry, SLA, And Jobs
 
-### Manual Payment
+- BayarAman deadline starts when the invoice/payment link is available.
+- Deadline is an absolute timestamp in `Asia/Jakarta`/WIB.
+- Midtrans `due_date` follows it when supported; BayarAman remains authoritative.
+- Expiry job only closes eligible `WAITING_BUYER_PAYMENT` transactions.
+- Job uses atomic conditional update on transaction ID, state, version, and
+  deadline. Audit is inserted only after a successful transition.
+- Admin operating hours are 09.00-21.00 WIB.
+- Payment/provider reconciliation target is two operating hours.
+- Payout target is 1x24 hours after eligibility.
+- Refund/split target is 2x24 hours after approval.
+- Escalation reminder runs every 1x24 hours until the case is handled.
+- Timeout creates reminder or `MANUAL_REVIEW_REQUIRED`, never financial success.
 
-- Store BayarAman payment destination and expected amount.
-- Record buyer `Sudah Bayar` claim.
-- Store admin payment review result.
-- Track payment status: waiting, under review, confirmed, not found, invalid, expired.
-- Append audit log for claim and review actions.
+Jobs are safe to rerun and use a correlation key without adding a product
+role or transaction state. Scheduler deployment is environment-specific.
 
-### WhatsApp Operations
+## 9. Financial Operations
 
-- Store WA group name/link.
-- Store group-created timestamp and operator note.
-- Track that payment announcement has been made.
-- MVP group creation happens manually outside system.
+### 9.1 Refund
 
-### Buyer Confirmation
+Use Midtrans Refund API when the payment method supports it. Otherwise an
+assigned Admin may execute the approved manual fallback. Store an operation ID,
+calculation, frozen Buyer destination, route, result, reference, and audit.
 
-- Generate short-lived confirmation link.
-- Send OTP to buyer email or WhatsApp.
-- Verify OTP with attempt limit and expiry.
-- Move transaction to payout eligibility.
+Refund, split, controlled exception, and authorized risk outcomes require two
+Admin approval. The action is disabled before both approvals are recorded.
 
-### Manual Outcome and Issue Recording
+### 9.2 Payout
 
-- Full in-app dispute is out of MVP.
-- Buyer/seller complaint is handled outside system, mainly in WA group.
-- System records final outcome: release, refund, split, cancelled.
-- Non-normal outcome requires operator note.
+Seller payout is independent of Midtrans settlement. A payout requires Buyer
+confirmation or an approved exception, no hold, Seller destination ownership,
+assigned Admin authorization, and ordinary payout re-authentication. Controlled
+exceptions may also require two Admin approval.
 
-### Manual Payout
+### 9.3 Split
 
-- Calculate seller net payout.
-- Store seller bank account snapshot.
-- Record payout status/reference/timestamp.
-- Append audit log for payout decisions.
+Split legs use frozen calculations and unique operation IDs. Buyer and Seller
+legs are separately evidenced; Buyer leg is attempted before Seller leg. Any
+`UNKNOWN` leg blocks retry until reconciliation. Only successful references
+may produce `SPLIT_SETTLED`.
 
-## 8. API Surface Draft
+## 10. Data Model And Constraints
 
-User-facing:
-
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/transactions/:code`
-- `POST /api/transactions`
-- `POST /api/transactions/:id/payment-claim`
-- `POST /api/confirmations/:token/request-otp`
-- `POST /api/confirmations/:token/verify`
-
-Operator MVP routes:
-
-- `POST /api/ops/transactions/:id/payment-review`
-- `POST /api/ops/transactions/:id/wa-group`
-- `POST /api/ops/transactions/:id/payment-announcement`
-- `POST /api/ops/transactions/:id/confirmation-link`
-- `POST /api/ops/transactions/:id/outcome`
-- `POST /api/ops/transactions/:id/payout`
-
-Scheduled jobs:
-
-- `payment-expiry`: mark unpaid payable transactions as expired after 1x24 hours.
-
-## 9. Manual Payment Implementation Rules
-
-- Store the expected amount before showing payment instruction.
-- Payment confirmation must be admin-driven, not buyer-claim-driven.
-- Buyer clicking `Sudah Bayar` only moves the transaction to `PAYMENT_UNDER_REVIEW`.
-- Admin review should compare expected amount, transaction code/reference if available, timestamp, and any operational notes.
-- If payment is not found, return to `WAITING_BUYER_PAYMENT` if still within expiry.
-- If payment is invalid or anomalous, move to `PAYMENT_INVALID` or `MANUAL_REVIEW`.
-- If payment is not completed in 1x24 hours, move to `PAYMENT_EXPIRED`.
-- Every payment claim, review, status change, and override must be audit-logged.
-
-## 10. PRD-to-TRD Traceability
-
-| PRD Need | TRD Implementation |
+| Entity | Required design |
 | --- | --- |
-| Seller creates transaction | Transaction module, transaction link |
-| Buyer creates transaction | Transaction module, seller contact and bank input |
-| Buyer pays to BayarAman account | Manual payment instruction |
-| Buyer clicks Sudah Bayar | Payment claim endpoint |
-| Admin checks incoming payment | Payment review ops endpoint |
-| Unpaid transaction expires 1x24 hours | Payment expiry job |
-| WA group created manually | WA operations fields/API |
-| Buyer confirms via link + OTP | Confirmation token + OTP module |
-| Admin transfers money to seller | Manual payout/pencairan module |
-| Complaint outside system | Outcome/issue recording only |
+| `accounts` | Reusable account; server-side Admin flag; verified WhatsApp prerequisite |
+| `transactions` | State, state version, creator, timestamps, immutable deadline reference |
+| `transaction_participants` | Exactly one Buyer and Seller; unique transaction/account; accounts must differ |
+| `transaction_terms` | Item, shipping, fee, total; frozen before invoice |
+| `invitations` | Token hash, target role, expiry, used/revoked fields; raw token never stored/logged |
+| `payment_invoices` | One active invoice per transaction; Midtrans IDs, link, amount, deadline, provider status |
+| `payment_provider_events` | Provider event ID/hash, order ID, amount, status, fraud, signature result; immutable raw evidence Admin-only |
+| `payment_reconciliations` | Decision, Get Status reference, operator, deadline, result, evidence |
+| `whatsapp_groups/checkpoints` | Group/message/evidence reference, actor, timestamp, separate role checkpoints |
+| `confirmation_links/otps` | Hashed tokens/codes, frozen number reference, expiry, attempt count, single-use |
+| `cancellation_requests/reconciliations` | Cause, note, requester, state/version, active uniqueness, provider result |
+| `complaint_holds/risk_holds` | Evidence, generic participant status, Admin-only raw data, outcome decision |
+| `financial_operations` | Unique operation ID, type, amount, destination snapshot, result, reference, approvals |
+| `idempotency_keys` | Unique actor/command/key and request hash; duplicate returns original result |
+| `audit_events` | Append-only actor, action, prior/result state, version, correlation, evidence reference |
+
+Required database constraints include distinct Buyer/Seller accounts, one
+participant per product role, one active invoice, one active cancellation
+request, one active financial operation per purpose, immutable success evidence,
+unique idempotency key, and state-version concurrency checks.
+
+Raw financial/provider/WhatsApp evidence is separated from masked participant
+projections. No Admin replacement of participant-owned payout/refund
+destinations is supported.
+
+## 11. API And Interface Boundary
+
+| Boundary | Contract |
+| --- | --- |
+| `POST /api/transactions` | Create seller/buyer initiated transaction; idempotent |
+| `POST /api/invitations/:token/join` | Validate session, verified WhatsApp, opposite role, distinct account, expiry, and version |
+| `POST /api/transactions/:id/payment-link` | Server-side idempotent Midtrans invoice creation |
+| `GET /api/transactions/:id/payment-status` | Buyer/Admin status refresh; never payment confirmation |
+| `POST /api/webhooks/midtrans` | Signature/order/amount/fraud validation and event idempotency |
+| `POST /api/admin/payments/:id/reconcile` | Get Status/manual reconciliation boundary |
+| `POST /api/admin/financial-operations/:id/refund` | Midtrans Refund API or approved manual fallback |
+| `POST /api/admin/financial-operations/:id/payout` | Separate Seller payout operation |
+| `POST /api/admin/financial-operations/:id/approve` | Two-Admin approval/re-auth boundary |
+| `POST /api/jobs/payment-expiry` | Secured idempotent expiry invocation |
+
+All mutations require authentication, authorization, `Idempotency-Key`, and
+`expectedStateVersion` where applicable. Responses expose canonical status,
+next actor, deadline, and financial result only within permission boundary.
+
+## 12. Authorization And Privacy
+
+- Product role is only Buyer, Seller, or Admin.
+- Client-supplied role is never trusted; server resolves account and
+  transaction role from persisted data.
+- Buyer and Seller may read/write only their owned fields.
+- Admin task assignment controls sensitive operations but does not create a
+  fourth product role.
+- Raw Midtrans, bank, WhatsApp, OTP, and risk evidence is Admin-restricted.
+- Buyer/Seller receive masked counterparty data and generic risk status.
+- Secrets, OTP plaintext, raw account values, and provider credentials are
+  excluded from logs, cookies, client responses, and audit payloads.
+- Two-Admin approval and payout re-authentication are server-side checks and
+  append-only audit events.
+
+## 13. Failure And Recovery Matrix
+
+| Failure | Expected behavior | Recovery |
+| --- | --- | --- |
+| Invoice API timeout | Keep existing invoice/deadline boundary; do not create duplicate | Retry idempotently or reconcile provider |
+| Webhook signature failure | Reject; no payment transition | Admin/provider reconciliation |
+| Order/amount mismatch | Non-authoritative exception; no fulfillment | Admin Get Status/reconciliation |
+| Duplicate/out-of-order webhook | Return existing result; do not overwrite authority | No state reset; audit event |
+| Provider outage/UNKNOWN | Keep waiting or manual review | Get Status API before retry/decision |
+| Invoice deadline reached | Expire once; no deadline reset | Late-fund refund-only exception |
+| WhatsApp delivery failure | No trusted state change | Retry within policy; Admin escalation |
+| Invalid/expired OTP | Reject and count attempt | Cooldown/resend or manual review |
+| Refund/payout FAILED | Record result and permit safe retry | Retry after operation closure |
+| Refund/payout UNKNOWN | Block retry and terminal state | Reconcile external operation |
+| Missing second approval/re-auth | Action remains disabled | Assigned Admin completes authorization |
+| State-version conflict | Reject mutation and audit conflict | Reload canonical state and retry if valid |
+| Notification failure | State unchanged | Retry at most three times; after the third failure create Admin escalation/reminder |
+
+## 14. Testing And Observability
+
+Required tests:
+
+- Schema constraints, participant ownership, frozen terms, invoice uniqueness,
+  and immutable financial evidence.
+- Midtrans signature/order/amount/fraud validation and payment authority.
+- Invoice idempotency, duplicate/delayed/out-of-order webhook, Get Status API,
+  provider outage, and late-fund no-revival behavior.
+- Expiry boundary, due date, operating hours, SLA, escalation, and fixed clock.
+- Refund/payout/split result recovery, two-Admin approval, and payout re-auth.
+- State-version conflict, duplicate mutation, unauthorized access, and audit append-only behavior.
+- OTP destination, expiry, attempt, cooldown, and single-use behavior.
+- UI-SCR states, mobile-width desktop surface, accessibility, and masking.
+- Notification delivery is attempted at most three times; the third failure
+  creates an escalation without changing trusted transaction state.
+
+Observability may record event IDs, correlation IDs, state/result, duration,
+retry count, and error category. It must not record secrets, OTP plaintext,
+raw bank values, raw provider credentials, or raw WhatsApp evidence.
+
+### 14.1 Concrete Traceability Matrix
+
+| Technical boundary | Requirement IDs | UX Flow IDs | UI-SCR/state IDs | QA Scenario IDs | PRD/PB IDs |
+| --- | --- | --- | --- | --- | --- |
+| Account/session and WhatsApp OTP | `UR-ACCOUNT-001`, `UR-ACCOUNT-002`, `UR-SYSTEM-002` | `UX-FLOW-001`, `UX-FLOW-024` | `UI-SCR-001`, `UI-SCR-014` | `QA-ACCOUNT-001`, `QA-CONF-002`, `QA-CONF-003` | `PB-BR-010` |
+| Transaction/invitation and role ownership | `UR-INIT-001`, `UR-BUYER-001`, `UR-SELLER-001`, `UR-PARTICIPANT-001` | `UX-FLOW-002`, `UX-FLOW-005`, `UX-FLOW-012` | `UI-SCR-002`, `UI-SCR-006`, `UI-SCR-009` | `QA-TRANS-001`, `QA-TRANS-003`, `QA-SEC-001` | `PB-BR-001`, `PB-BR-003` |
+| Midtrans invoice/payment link | `UR-PAYMENT-001`, `UR-PAYMENT-002`, `UR-BR-031` | `UX-FLOW-012`, `UX-FLOW-013` | `UI-SCR-009`, `UI-SCR-010` | `QA-MP-001`, `QA-MP-003` | `PB-MP-001`, `PB-MP-OD-001` |
+| Webhook authority and precedence | `UR-PAYMENT-004`, `UR-PAYMENT-005`, `UR-ADMIN-020` | `UX-FLOW-015`, `UX-FLOW-016`, `UX-FLOW-047` | `UI-SCR-011` | `QA-MP-004`, `QA-MP-005`, `QA-MP-006` | `PB-MP-002`, `PB-MP-003`, `PB-MP-OD-002`, `PB-MP-OD-003` |
+| Get Status/reconciliation/outage | `UR-PAYMENT-006`, `UR-ADMIN-023`, `UR-BR-034` | `UX-FLOW-047`, `UX-FLOW-050` | `UI-SCR-011`, `UI-SCR-022` | `QA-MP-007`, `QA-PAY-007`, `QA-EXP-003` | `PB-MP-005`, `PB-MP-OD-004` |
+| Expiry/due date/late fund | `UR-SYSTEM-005`, `UR-SYSTEM-006`, `UR-BR-010`, `UR-BR-035` | `UX-FLOW-045`, `UX-FLOW-048`, `UX-FLOW-049` | `UI-SCR-010`, `UI-SCR-020` | `QA-MP-008`, `QA-EXP-001`, `QA-EXP-004` | `PB-MP-006`, `PB-MP-OD-005` |
+| WhatsApp group/checkpoints | `UR-ADMIN-003`, `UR-PARTY-001`, `UR-SELLER-004` | `UX-FLOW-017`, `UX-FLOW-020` | `UI-SCR-012`, `UI-SCR-013` | `QA-WA-001`, `QA-WA-003`, `QA-WA-004` | `PB-BR-008`, `PB-BR-009` |
+| Confirmation and payout eligibility | `UR-BUYER-006`, `UR-BUYER-007`, `UR-ADMIN-006` | `UX-FLOW-024`, `UX-FLOW-025`, `UX-FLOW-026` | `UI-SCR-014`, `UI-SCR-016` | `QA-CONF-002`, `QA-CONF-005`, `QA-FIN-001` | `PB-BR-010` |
+| Refund/payout/split operations | `UR-FINANCIAL-001`, `UR-FINANCIAL-002`, `UR-FINANCIAL-003`, `UR-BR-040`, `UR-BR-041` | `UX-FLOW-025`, `UX-FLOW-040`, `UX-FLOW-042` | `UI-SCR-016`, `UI-SCR-018`, `UI-SCR-019` | `QA-FIN-002`, `QA-FIN-004`, `QA-FIN-005`, `QA-FIN-008` | `PB-MP-007`, `PB-MP-008` |
+| Cancellation/complaint/risk | `UR-CANCEL-004`, `UR-CANCEL-007`, `UR-CANCEL-022`, `UR-CAN-OD-007` | `UX-FLOW-054`, `UX-FLOW-057`, `UX-FLOW-072` | `UI-SCR-017`, `UI-SCR-023`, `UI-SCR-024` | `QA-CANCEL-003`, `QA-CANCEL-006`, `QA-COMPLAINT-001`, `QA-RISK-001`, `QA-SEC-004` | `PB-CAN-OD-001`, `PB-CAN-OD-005` |
+| SLA/notification/escalation | `UR-BR-043`, `UR-BR-044`, `UR-CAN-OD-008` | `UX-FLOW-018`, `UX-FLOW-066` | `UI-SCR-012`, `UI-SCR-022` | `QA-SLA-001`, `QA-SLA-002`, `QA-NOTIFY-001` | `PB-CAN-OD-006` |
+| Launch gate | `UR-BR-046` | Non-UI release gate | Non-UI | `QA-LAUNCH-001` | `PB-MP-009`, `PB-MP-OD-005` |
+
+## 15. Local Environment And Deployment
+
+- PostgreSQL runs through Docker Compose/OrbStack only for local development.
+- Midtrans sandbox/fake adapter is used for local and automated tests.
+- `.env.example` contains placeholder variables only; production secrets are
+  managed outside the repository.
+- Production remains PostgreSQL-compatible and does not depend on OrbStack.
+- Webhook deployment requires HTTPS, provider configuration, signature secret,
+  replay protection, monitoring, and launch approval.
+- Scheduler invocation must be authenticated and safe to rerun.
+
+## 16. Launch Gate And Open Technical Decisions
+
+Production real-money launch remains blocked until merchant settlement,
+custody/forwarding, legal/compliance, consumer disclosures, complaint/data
+controls, production credentials, webhook deployment, and real-money pilot
+evidence are approved under `UR-BR-046`, `PB-MP-009`, `PB-MP-OD-005`, and
+`QA-LAUNCH-001`.
+
+| Decision | Owner | Stage | Status |
+| --- | --- | --- | --- |
+| Midtrans production account, settlement, custody, and webhook arrangement | Product/Legal/Midtrans partner | Launch gate | Open blocker |
+| Provider refund capability per payment method | Engineering/Product | Provider integration | Open; fallback defined |
+| Retention duration and legal hold for raw evidence | Legal/Compliance | Production launch | Open blocker |
+| Exact scheduler/queue provider and alerting | Engineering | Implementation plan | Deferred |
+| Final schema indexes and migration ordering | Engineering | Implementation plan | Deferred |
+
+## 17. Migration And Ticket Boundary
+
+TRD v1.1 and existing `docs/engineering/tickets/` may contain the former
+manual-bank payment flow, Buyer `Sudah Bayar` claim, Seller OTP, seven
+WhatsApp checkpoints, or legacy states. Those artifacts are not authoritative
+until reviewed against PRD v0.2 and this TRD v1.2.
+
+This document does not create Engineering Tickets, implementation plans,
+migrations, provider credentials, or source code. Ticket review must preserve
+stable product IDs and remove behavior that conflicts with Midtrans authority.
+
+## 18. Approval Checklist
+
+- [x] PRD v0.2 and all approved product artifacts are linked.
+- [x] Midtrans invoice, payment authority, webhook, reconciliation, expiry, and late-fund boundaries are defined.
+- [x] Refund, payout, split, two-Admin approval, and re-authentication boundaries are defined.
+- [x] Product roles remain Buyer, Seller, and Admin only.
+- [x] No new transaction state or financial result was introduced.
+- [x] Data, API, authorization, concurrency, audit, failure, testing, and deployment boundaries are defined.
+- [x] Launch gate and migration from legacy manual-bank behavior are explicit.
+- [x] Product Owner review and approval completed.
+
+TRD v1.2 is `Approved`. Engineering Tickets and execution plans may now use
+it as the technical source, subject to ticket-level scope and plan review.

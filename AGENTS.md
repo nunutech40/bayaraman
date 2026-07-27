@@ -1,272 +1,88 @@
-# BayarAman Agent Operating Manual
+# BayarAman Agent Guide
 
-This file is the first context an AI coding agent should read when working on BayarAman.
+Read this file first. It defines the minimum context and safety rules for AI or human contributors. The workflow is repository-local and needs no HumanLayer account or external login.
 
-Purpose:
+## Current Stage
 
-- Keep work consistent across Codex, Claude Code, Cursor, HumanLayer, or manual agent sessions.
-- Avoid rereading every long document for every task.
-- Provide the compact source of truth, workflow rules, and task-specific reading map.
+- Active phase: User Requirements review, with a pending upstream cancellation change.
+- Approved sources: `docs/product/00-product-brief.md` v0.7, `docs/product/01-user-journey.md` v0.4, and `docs/product/02-ux-flow.md` v0.1.
+- Active draft: `docs/product/03-user-requirements.md` v0.2; prior `UR-OD-001` through `UR-OD-012` are confirmed.
+- Before approving User Requirements, revise and re-approve Product Brief, User Journey, and UX Flow for cancellation, one stage at a time.
+- Do not create UI/UX Design or QA Scenarios until the owner explicitly approves the User Requirements.
+- Root `PRD.md`, `TRD.md`, `DATABASE.md`, and `AUTH.md` will be recreated only in their proper workflow stages.
+- Pre-workflow versions are archived under `docs/archive/pre-workflow/`.
 
-HumanLayer login is not required to use this file. HumanLayer is optional orchestration only.
+## Source Precedence
 
-Main reusable project workflow:
+When sources disagree, use this order:
 
-- `WORKFLOW.md`
+1. Latest explicit product-owner direction.
+2. The latest approved active artifact.
+3. Baseline drafts in `requirenment/`, only while producing or revising Product Brief.
+4. Repository code for current implementation evidence.
+5. Prototype and archive only when explicitly requested.
 
-Use `WORKFLOW.md` for product phase, engineering phase, and per-ticket execution.
+Never read `docs/archive/` automatically. Never let prototype behavior silently become a product requirement.
 
-## Project Summary
+## Minimal Context Map
 
-BayarAman is a rekber-style trust layer for transactions outside marketplaces.
+Read only the row required by the task.
 
-BayarAman is not:
-
-- marketplace
-- wallet
-- payment gateway
-- automated payout system
-
-Current MVP direction:
-
-- Manual payment collection to BayarAman's bank account.
-- Buyer clicks `Sudah Bayar`.
-- Admin manually checks incoming payment.
-- Admin creates WhatsApp group.
-- Admin announces payment received in the group.
-- Seller ships goods/service.
-- Seller and buyer report completion in the group.
-- Admin sends buyer confirmation link.
-- Buyer confirms via OTP to email or WhatsApp.
-- Admin manually transfers payout to seller.
-- Buyer-seller complaints are handled outside the system during MVP.
-- Unpaid transactions expire after 1x24 hours.
-
-## Source of Truth
-
-Read only the files needed for the task.
-
-Always read:
-
-- `AGENTS.md`
-
-Read by task type:
-
-| Task type | Also read |
+| Task | Required context |
 | --- | --- |
-| Workflow/process | `WORKFLOW.md` |
-| Product/flow changes | `README.md`, `PRD.md`, `TRD.md` |
-| Frontend/prototype/app UI | `README.md`, `PRD.md`, `TRD.md`, `prototype/` |
-| Auth/roles/permissions | `AUTH.md`, `DATABASE.md` |
-| Database/schema | `DATABASE.md`, `TRD.md` |
-| API/state transitions | `TRD.md`, `DATABASE.md` |
-| Manual payment/admin ops | `TRD.md`, `DATABASE.md`, `PRD.md` |
-| HumanLayer/task workflow | `.humanlayer/workflow.md`, `.humanlayer/tasks.md` |
+| Select/run a workflow stage | `AGENTS.md`, `WORKFLOW.md` |
+| Product Brief | Latest owner direction, `requirenment/README.md`, baseline files selected from that index, and `docs/product/templates/product-brief-template.md` |
+| User Journey | `AGENTS.md`, approved `docs/product/00-product-brief.md`, `docs/product/templates/user-journey-template.md` |
+| UX Flow | `AGENTS.md`, approved `docs/product/00-product-brief.md`, approved `docs/product/01-user-journey.md`, `docs/product/templates/ux-flow-template.md` |
+| User Requirements | `AGENTS.md`, approved `docs/product/01-user-journey.md`, approved `docs/product/02-ux-flow.md`, `docs/product/templates/user-requirements-template.md` |
+| UI/UX Design | `AGENTS.md`, approved `docs/product/02-ux-flow.md`, approved `docs/product/03-user-requirements.md`, `docs/product/templates/ui-ux-spec-template.md` |
+| QA Scenarios | `AGENTS.md`, approved `docs/product/03-user-requirements.md`, approved `docs/product/04-ui-ux-spec.md`, `docs/product/templates/qa-scenarios-template.md`; open the Journey or UX Flow only for traceability gaps |
+| PRD | Approved product artifacts `00` through `05` and PRD template |
+| Technical Design | Approved PRD, relevant requirement/UX/UI/QA IDs, technical-design template, affected code |
+| Engineering Ticket | Approved technical-design section, relevant requirement/UX/UI/QA IDs, ticket template |
+| Execute ticket | Selected ticket, its research/plan, affected code/tests, referenced requirement/UX/UI/QA IDs |
+| Prototype-only change | Approved UI/UX Design and relevant requirements plus affected files under `prototype/` |
 
-Avoid loading all docs unless the task touches multiple domains.
+Do not load every project document for convenience. Refer to stable IDs instead of copying whole upstream artifacts into later files.
 
-## Latest User Journey
+## Product Decision Boundary
 
-### Seller as Input User
+`AGENTS.md`, `WORKFLOW.md`, templates, and the workflow skill define process only. They must not define BayarAman product behavior.
 
-```text
-seller -> bikin transaksi di BayarAman
-buyer -> bayar ke rekening BayarAman
-buyer -> klik Sudah Bayar
-admin -> cek pembayaran
-admin -> buat group WA
-admin -> info di group pembayaran masuk
-seller -> kirim barang
-seller & buyer -> info kalau pesanan selesai
-admin -> kirim link konfirmasi di group
-buyer -> klik link konfirmasi
-buyer -> OTP ke email atau WhatsApp
-admin -> transfer uang ke seller
-```
+- During Product Brief, derive product behavior from current owner direction and `requirenment/`.
+- After Product Brief approval, use the approved artifact instead of rereading baseline drafts.
+- If an approved artifact and a later explicit owner instruction conflict, record the change in the artifact being revised; do not silently alter downstream files.
 
-### Buyer as Input User
+## Working Rules
 
-```text
-buyer -> bikin transaksi di BayarAman dan masukin no rek seller
-buyer -> bayar ke rekening BayarAman
-buyer -> klik Sudah Bayar
-admin -> cek pembayaran
-admin -> buat group WA
-admin -> info di group pembayaran masuk
-seller -> kirim barang
-seller & buyer -> info kalau pesanan selesai
-admin -> kirim link konfirmasi di group
-buyer -> klik link konfirmasi
-buyer -> OTP ke email atau WhatsApp
-admin -> transfer uang ke seller
-```
+- Work on one requested artifact or ticket at a time.
+- Use the previous approved artifact as the main input for the next stage.
+- Keep drafts marked as drafts until owner approval.
+- Do not synchronize downstream artifacts after every edit.
+- Record deferred decisions at the stage that actually needs them.
+- Keep UX Flow about sequence and handoffs; keep UI/UX Design about screens, states, interaction, content, and reviewed wireframes/prototypes.
+- Preserve unrelated changes in a dirty worktree.
+- Do not touch infographic files unless explicitly requested.
+- Do not infer product rules from archived documents, prototype behavior, workflow examples, wireframes, or templates.
 
-## Role Model
+## Coding Execution
 
-Global/internal roles:
+For each engineering ticket:
 
-- `USER`
-- `ADMIN`
-- `FINANCE`
-- `SUPER_ADMIN`
+1. Research only the affected code and contract.
+2. Write a scoped implementation plan.
+3. Review authorization, state/data safety, failures, manual boundaries, and tests.
+4. Implement the approved plan.
+5. Validate against acceptance criteria and report evidence.
 
-Transaction roles:
+Use durable files under `docs/execution/<ticket-id>/` for substantial work. For small tasks, keep the same structure in the active session.
 
-- `BUYER`
-- `SELLER`
+## Verification
 
-Important rule:
-
-- Buyer/seller are per-transaction roles, not global account types.
-- A user can be buyer in one transaction and seller in another.
-
-## State Model
-
-Core happy path:
-
-```text
-DRAFT
-WAITING_BUYER_PAYMENT
-PAYMENT_UNDER_REVIEW
-PAYMENT_CONFIRMED
-WA_GROUP_CREATED
-PAYMENT_ANNOUNCED
-SELLER_SHIPPED
-WAITING_BUYER_CONFIRMATION
-BUYER_CONFIRMED
-PAYOUT_PENDING
-PAYOUT_PROCESSING
-PAID_OUT
-```
-
-Important alternate states:
-
-```text
-PAYMENT_EXPIRED
-PAYMENT_INVALID
-MANUAL_REVIEW
-ISSUE_REPORTED
-REFUND_PENDING
-REFUNDED
-SPLIT_SETTLEMENT
-CANCELLED
-PAYOUT_FAILED
-```
-
-Do not use older states such as:
-
-- `FUNDS_SECURED`
-- `DELIVERED`
-- `PAYMENT_PENDING`
-- `PAYMENT_SESSION_CREATED`
-- `WAITING_SELLER_ACCEPTANCE`
-- `IN_FULFILLMENT`
-
-## Critical Business Rules
-
-- Buyer `Sudah Bayar` is only a claim.
-- Payment is confirmed only after admin review.
-- Seller should ship only after admin announces payment received in WhatsApp group.
-- Payout should happen only after buyer confirmation with OTP, unless a manual override/outcome exists.
-- Complaint/dispute handling is outside the MVP system.
-- The system records final outcome only: release, refund, split, cancelled.
-- Payment expiry is 1x24 hours after transaction becomes payable.
-- Store seller bank snapshots for payout records.
-- Financial records should not be hard-deleted.
-- Important state/financial actions must be audit-logged.
-
-## Implementation Workflow
-
-Use `WORKFLOW.md` for the full reusable process.
-
-Short version for every coding task:
-
-### 1. Plan
-
-Before editing:
-
-1. Restate the task.
-2. Identify the task type.
-3. Read only the relevant docs from the reading map.
-4. List in-scope and out-of-scope.
-5. Identify affected state transitions and data models.
-6. Write a short 3-7 step plan.
-
-### 2. Execute
-
-During coding:
-
-- Keep changes tightly scoped.
-- Prefer existing project patterns.
-- Avoid unrelated refactors.
-- Do not touch infographic files unless explicitly asked.
-- Do not introduce payment gateway/Midtrans into MVP.
-- Do not build in-app dispute workflow unless explicitly asked.
-- Keep manual admin operations explicit in UI/state.
-
-### 3. Verify
-
-Run the strongest available checks.
-
-If Next.js/app exists:
-
-```bash
-npm run lint
-npm run typecheck
-npm test
-```
-
-If only prototype exists:
+For the current static prototype:
 
 ```bash
 node --check prototype/app.js
 ```
 
-If checks cannot run, state why.
-
-### 4. Handoff
-
-Final task response should include:
-
-- Summary
-- Verification
-- Changed files
-- Any remaining risk or follow-up
-
-## Current Repo Status
-
-As of this manual:
-
-- Repo is product definition + static prototype.
-- No real Next.js application exists yet.
-- Static prototype lives in `prototype/`.
-- GitHub Pages prototype URL:
-  `https://nunutech40.github.io/bayaraman/prototype/`
-
-## Recommended Implementation Order
-
-1. Scaffold Next.js + TypeScript app.
-2. Port prototype into real routes/components.
-3. Add database schema with Prisma or Drizzle.
-4. Implement transaction creation.
-5. Implement buyer `Sudah Bayar` claim.
-6. Implement admin manual payment review.
-7. Implement WhatsApp ops tracking.
-8. Implement buyer confirmation link + OTP.
-9. Implement manual payout recording.
-10. Implement payment expiry job.
-
-## HumanLayer Notes
-
-HumanLayer is optional. The project can be worked on without logging in to HumanLayer.
-
-If HumanLayer auth works:
-
-- Use `.humanlayer/workspace.json` for task worktrees.
-- Use `.humanlayer/workflow.md` for planning/execution workflow.
-- Use `.humanlayer/tasks.md` for task roadmap.
-
-If HumanLayer auth is down:
-
-- Use `AGENTS.md` directly with Codex or another coding agent.
-- Optionally create manual worktrees/branches with `git worktree`.
+When a real application exists, use its actual lint, typecheck, and test scripts.
