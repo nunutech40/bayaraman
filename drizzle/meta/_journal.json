@@ -50,6 +50,13 @@
       "when": 1785328001000,
       "tag": "0006_bayar004_invoice_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785328002000,
+      "tag": "0007_bayar005_provider_reconciliation",
+      "breakpoints": true
     }
   ]
 }

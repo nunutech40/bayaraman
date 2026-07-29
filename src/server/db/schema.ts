@@ -315,6 +315,7 @@ export const paymentInvoices = pgTable(
     amount: integer("amount").notNull(),
     currency: text("currency").notNull().default("IDR"),
     providerStatus: text("provider_status"),
+    authoritativeProviderEventId: uuid("authoritative_provider_event_id"),
     idempotencyReference: text("idempotency_reference").notNull(),
     issuedAt: timestamp("issued_at", { withTimezone: true }),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
@@ -340,7 +341,7 @@ export const paymentProviderEvents = pgTable(
   "payment_provider_events",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    invoiceId: uuid("invoice_id").references(() => paymentInvoices.id, { onDelete: "set null" }),
+    invoiceId: uuid("invoice_id").references(() => paymentInvoices.id, { onDelete: "restrict" }),
     provider: text("provider").notNull(),
     providerEventId: text("provider_event_id").notNull(),
     payloadHash: text("payload_hash").notNull(),
@@ -348,15 +349,21 @@ export const paymentProviderEvents = pgTable(
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
     providerOrderId: text("provider_order_id").notNull(),
     amount: integer("amount"),
+    currency: text("currency"),
     providerStatus: text("provider_status"),
     fraudStatus: text("fraud_status"),
     signatureValid: boolean("signature_valid"),
+    validationOutcome: text("validation_outcome").notNull().default("LEGACY_UNASSESSED"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [
     uniqueIndex("payment_provider_events_provider_event_unique").on(table.provider, table.providerEventId),
     index("payment_provider_events_order_idx").on(table.provider, table.providerOrderId),
-    index("payment_provider_events_invoice_idx").on(table.invoiceId)
+    index("payment_provider_events_invoice_idx").on(table.invoiceId),
+    check(
+      "payment_provider_events_validation_outcome_check",
+      sql.raw("validation_outcome IN ('LEGACY_UNASSESSED', 'ACCEPTED', 'NON_AUTHORITATIVE', 'INVALID_SIGNATURE', 'UNKNOWN_ORDER', 'IDENTITY_MISMATCH', 'AMOUNT_MISMATCH', 'CURRENCY_MISMATCH', 'FRAUD_MISMATCH', 'CONFLICT', 'UNKNOWN')")
+    )
   ]
 );
 
@@ -367,6 +374,7 @@ export const paymentReconciliations = pgTable(
     transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
     invoiceId: uuid("invoice_id").references(() => paymentInvoices.id, { onDelete: "set null" }),
     decision: text("decision").notNull(),
+    decisionCode: text("decision_code"),
     providerStatusReference: text("provider_status_reference"),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
     result: text("result").notNull(),
@@ -377,7 +385,40 @@ export const paymentReconciliations = pgTable(
   },
   (table) => [
     index("payment_reconciliations_transaction_idx").on(table.transactionId),
-    index("payment_reconciliations_invoice_idx").on(table.invoiceId)
+    index("payment_reconciliations_invoice_idx").on(table.invoiceId),
+    check(
+      "payment_reconciliations_decision_code_check",
+      sql.raw("decision_code IS NULL OR decision_code IN ('PROVIDER_STATUS_REVIEW', 'LATE_FUND_HANDOFF', 'CONTROLLED_EXCEPTION_HANDOFF')")
+    )
+  ]
+);
+
+export const paymentReconciliationEvents = pgTable(
+  "payment_reconciliation_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    reconciliationId: uuid("reconciliation_id").notNull().references(() => paymentReconciliations.id, { onDelete: "restrict" }),
+    providerEventId: uuid("provider_event_id").notNull().references(() => paymentProviderEvents.id, { onDelete: "restrict" }),
+    relationType: text("relation_type").notNull(),
+    incomingPayloadHash: text("incoming_payload_hash").notNull(),
+    sanitizedReason: text("sanitized_reason").notNull(),
+    correlationId: uuid("correlation_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("payment_reconciliation_events_identity_unique").on(
+      table.reconciliationId,
+      table.providerEventId,
+      table.relationType,
+      table.incomingPayloadHash
+    ),
+    check(
+      "payment_reconciliation_events_relation_type_check",
+      sql.raw("relation_type IN ('PRIMARY_EVENT', 'CONFLICT_EVENT', 'OUT_OF_ORDER_EVENT', 'UNKNOWN_EVENT', 'LATE_EVENT')")
+    ),
+    index("payment_reconciliation_events_reconciliation_idx").on(table.reconciliationId),
+    index("payment_reconciliation_events_provider_event_idx").on(table.providerEventId)
   ]
 );
 
