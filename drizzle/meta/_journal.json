@@ -57,6 +57,13 @@
       "when": 1785328002000,
       "tag": "0007_bayar005_provider_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785328003000,
+      "tag": "0008_bayar006_whatsapp_checkpoints",
+      "breakpoints": true
     }
   ]
 }

@@ -428,7 +428,9 @@ export const whatsappGroups = pgTable("whatsapp_groups", {
   groupReference: text("group_reference").notNull(),
   createdByAccountId: uuid("created_by_account_id").notNull().references(() => accounts.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => [
+  uniqueIndex("whatsapp_groups_one_canonical_per_transaction_idx").on(table.transactionId)
+]);
 
 export const whatsappCheckpoints = pgTable("whatsapp_checkpoints", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -440,8 +442,32 @@ export const whatsappCheckpoints = pgTable("whatsapp_checkpoints", {
   evidenceReference: text("evidence_reference"),
   snapshotHash: text("snapshot_hash").notNull(),
   recordedByAccountId: uuid("recorded_by_account_id").notNull().references(() => accounts.id),
-  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow()
-});
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  deliveryResult: text("delivery_result").notNull().default("PENDING"),
+  correctedCheckpointId: uuid("corrected_checkpoint_id"),
+  correctionReason: text("correction_reason")
+}, (table) => [
+  uniqueIndex("whatsapp_checkpoints_transaction_idempotency_unique").on(table.transactionId, table.idempotencyKey),
+  foreignKey({
+    columns: [table.correctedCheckpointId],
+    foreignColumns: [table.id]
+  }),
+  check("whatsapp_checkpoints_type_check", sql.raw("checkpoint_type IN ('PAYMENT_ANNOUNCED', 'SELLER_SHIPMENT', 'SELLER_COMPLETION', 'BUYER_COMPLETION')")),
+  check("whatsapp_checkpoints_delivery_result_check", sql.raw("delivery_result IN ('PENDING', 'SENT', 'FAILED', 'UNKNOWN')")),
+  check("whatsapp_checkpoints_correction_reason_check", sql.raw("corrected_checkpoint_id IS NULL OR correction_reason IS NOT NULL"))
+]);
+
+export const whatsappCheckpointHeads = pgTable("whatsapp_checkpoint_heads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
+  checkpointType: text("checkpoint_type").notNull(),
+  currentCheckpointId: uuid("current_checkpoint_id").notNull().references(() => whatsappCheckpoints.id, { onDelete: "restrict" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  uniqueIndex("whatsapp_checkpoint_heads_transaction_type_unique").on(table.transactionId, table.checkpointType),
+  uniqueIndex("whatsapp_checkpoint_heads_current_event_unique").on(table.currentCheckpointId)
+]);
 
 export const confirmationLinks = pgTable(
   "confirmation_links",
