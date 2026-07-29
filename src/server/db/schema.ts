@@ -252,7 +252,10 @@ export const invitations = pgTable(
   },
   (table) => [
     uniqueIndex("invitations_token_hash_unique").on(table.tokenHash),
-    index("invitations_transaction_idx").on(table.transactionId)
+    index("invitations_transaction_idx").on(table.transactionId),
+    uniqueIndex("invitations_one_active_target_idx")
+      .on(table.transactionId, table.targetRole)
+      .where(sql`${table.revokedAt} IS NULL AND ${table.usedAt} IS NULL`)
   ]
 );
 
@@ -312,6 +315,7 @@ export const paymentInvoices = pgTable(
     amount: integer("amount").notNull(),
     currency: text("currency").notNull().default("IDR"),
     providerStatus: text("provider_status"),
+    idempotencyReference: text("idempotency_reference").notNull(),
     issuedAt: timestamp("issued_at", { withTimezone: true }),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
     dueDateAt: timestamp("due_date_at", { withTimezone: true }),
@@ -324,6 +328,7 @@ export const paymentInvoices = pgTable(
     uniqueIndex("payment_invoices_provider_invoice_unique")
       .on(table.provider, table.providerInvoiceId)
       .where(sql`${table.providerInvoiceId} IS NOT NULL`),
+    uniqueIndex("payment_invoices_idempotency_reference_unique").on(table.idempotencyReference),
     uniqueIndex("payment_invoices_one_active_idx")
       .on(table.transactionId)
       .where(sql`${table.isActive} = true`),

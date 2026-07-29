@@ -1,133 +1,132 @@
 # BAYAR-004 Validation
 
-## Metadata
+## Execution Record
 
-```text
-Ticket: BAYAR-004 — Payment Instructions, Sudah Bayar Claim, and Original Expiry
-Implementation scope: Payment instruction issuance, Buyer payment claim,
-original 1x24-hour expiry, participant projections, and payment UI states
-Validated on: 2026-07-23
-```
+~~~text
+Ticket: BAYAR-004 — Midtrans Invoice, Hosted Checkout, and Payment Expiry
+Plan: docs/execution/BAYAR-004/02-plan.md v0.1
+Plan review: docs/execution/BAYAR-004/03-plan-review.md Approved
+Started: 2026-07-29
+Completed: 2026-07-29
+Implementation: Complete
+Validation: Passed
+~~~
 
-## Files Changed
+## Implemented Changes
 
-- `src/server/db/schema.ts` for the immutable receiving-account snapshot field
-  and PostgreSQL partial unique index for one active claim.
-- `drizzle/0002_demonic_mentallo.sql` for the BAYAR-004 migration.
-- `.env.example` for receiving-account placeholders; local values remain in
-  ignored `.env`.
-- `package.json` and `package-lock.json` for the local expiry runner command and
-  `tsx` runner dependency.
-- `src/server/payment/` for receiving-account configuration, masking/WIB
-  projection, instruction issuance, payment read, and Buyer claim service.
-- `src/server/transaction/service.ts` for the atomic payable transition after
-  both role datasets are complete.
-- `src/server/jobs/` for deterministic expiry and local runner boundary.
-- `src/app/api/transactions/[id]/payment-instructions/route.ts` and
-  `payment-claim/route.ts` for payment read/claim APIs.
-- `src/components/transactions/status.tsx` and `src/app/globals.css` for
-  payment instruction, claim, review, expired, loading, and deferred UI states.
-- `tests/unit/payment.test.ts` for receiving-account, masking, and WIB tests.
+| Planned step | Result | Files changed | Deviation/reason |
+| --- | --- | --- | --- |
+| Provider-neutral invoice adapter and Midtrans mapper | Done | `src/server/providers/payment-invoice.ts`, `src/server/providers/midtrans/config.ts`, `invoice.ts`, `fake.ts` | Uses a fake adapter in tests; production credentials remain server-only and launch-gated |
+| Idempotent invoice service and safe projection | Done | `src/server/payment/invoice.ts` | One active invoice, frozen amount, absolute deadline, request hash, and safe participant projection implemented |
+| Invoice schema and migration | Done | `src/server/db/schema.ts`, `drizzle/0006_bayar004_invoice_integrity.sql`, `drizzle/meta/_journal.json` | Additive migration adds idempotency reference, unique index, immutable-field triggers, and legacy backfill |
+| Participant payment-link/status routes | Done | `src/app/api/transactions/[id]/payment-link/route.ts`, `payment-status/route.ts` | Buyer/Seller participant access only; no payment authority or webhook behavior |
+| Invoice expiry boundary | Done | `src/server/jobs/payment-expiry.ts`, `run-payment-expiry.ts` | Uses active invoice deadline and atomic state/version guard; local runner remains bounded |
+| Legacy manual route quarantine | Done | `payment-instructions/route.ts`, `payment-claim/route.ts` | Both routes return `410 Gone`; legacy tables remain compatibility-only |
+| Participant UI states | Done | `src/components/transactions/status.tsx`, `src/app/globals.css` | Hosted payment link, provider status, deadline, refresh, loading, error, and recovery states added |
+| Tests and fixtures | Done | `tests/unit/payment-invoice.test.ts`, `tests/integration/foundation.test.ts` | Added provider boundary and immutable invoice assertions; existing fixture updated for required field |
+| Execution evidence | Done | This file | Validation evidence recorded after implementation |
 
-No Product Brief, User Journey, UX Flow, User Requirements, UI/UX Specification,
-QA Scenarios, PRD, TRD, engineering ticket, prototype, or BAYAR-005 code was
-changed.
+## Acceptance Evidence
 
-## Commands And Results
+| Acceptance criterion or UX/UI state | Evidence | Result |
+| --- | --- | --- |
+| Midtrans payment link uses `payment_type: payment_link` | Provider adapter request mapping and unit boundary | Pass |
+| Amount comes from frozen transaction terms | `ensurePaymentLink` requires `frozenAt` and persists `terms.totalAmount` | Pass |
+| One active invoice and duplicate request safety | `payment_invoices_one_active_idx`, idempotency reference unique index, request-hash handling, and concurrent integration coverage | Pass |
+| Invoice identity, amount, and deadline immutability | Migration trigger `payment_invoices_immutable_fields` and integration update/delete assertions | Pass |
+| Hosted URL and provider status are safe projections | Adapter returns allowlisted fields; secrets/raw provider payloads are not returned | Pass |
+| Deadline is absolute and remains 1x24 hours | Service calculates once from `issuedAt`; refresh/retry never recalculates | Pass |
+| Buyer/Seller participant authorization | Route/service resolves session account and participant ownership; Admin/unrelated access is denied | Pass |
+| `Cek status pembayaran` is read-only | `GET /payment-status` reads the safe invoice projection and never changes paid state | Pass |
+| No `Sudah Bayar` or manual-bank payment path | Participant UI has hosted link/status refresh; legacy routes return `410 Gone` | Pass |
+| Expiry is deterministic and rerun-safe | Invoice-based job uses deadline, exact state/version, active invoice predicate, and post-update audit | Pass |
+| Late provider success does not revive transaction | BAYAR-004 has no authority/revival path and hands reconciliation to BAYAR-005 | Pass |
+| UI-SCR-009/UI-SCR-010 states | Loading, disabled, hosted link, pending/provider status, error/retry, deadline, and unauthorized paths are implemented in the existing mobile-width shell | Pass |
+| UI-SCR-021 boundary | Cancellation remains deferred/disabled; no cancellation API or transition is implemented | Pass |
+| Scope safety | No webhook authority, refund, payout, WhatsApp, cancellation, complaint, risk operation, new role, or new state added | Pass |
 
-| Command/check | Result |
-| --- | --- |
-| `npm test` | Pass: 4 test files, 16 tests |
-| `npm run typecheck` | Pass |
-| `npm run lint` | Pass: no warnings or errors |
-| `npm run build` | Pass: Next.js production build; payment routes included |
-| `npm run db:generate` | Pass: no schema changes after migration generation |
-| `npm run db:migrate` | Pass: migration applied; rerun has no pending changes |
-| `npm run job:payment-expiry` | Pass: local runner completed; rerun with no candidates is safe |
-| `docker compose exec -T postgres pg_isready -U bayaraman -d bayaraman` | Pass: accepting connections |
-| `git diff --check` | Pass |
+## Automated Checks
 
-## Manual Smoke Test
+| Command/check | Result | Relevant output/notes |
+| --- | --- | --- |
+| `npm test` | Pass | 8 test files, 25 tests passed; unit and PostgreSQL integration tests enabled with `TEST_DATABASE_URL` |
+| `npm run typecheck` | Pass | TypeScript strict check passed |
+| `npm run lint` | Pass | No ESLint warnings or errors |
+| `npm run build` | Pass | Next.js production build includes `/payment-link` and `/payment-status` routes |
+| `npm run db:generate` | Pass | Schema generation completed; no generated migration was retained beyond the planned `0006` migration |
+| `npm run db:migrate` | Pass | `0006_bayar004_invoice_integrity.sql` applied successfully to local PostgreSQL |
+| PostgreSQL index check | Pass | `payment_invoices_idempotency_reference_unique` and `payment_invoices_one_active_idx` exist |
+| PostgreSQL trigger check | Pass | `payment_invoices_immutable_fields` and `payment_invoices_no_delete` exist |
+| `docker compose ps` | Pass | `bayarman-postgres-1` healthy on local OrbStack |
+| `git diff --check` | Pass | No whitespace errors |
 
-Using two temporary verified local accounts and the OrbStack PostgreSQL
-container:
+## Manual Checks
 
-1. Seller created a physical-goods transaction.
-2. Buyer joined using the invitation and completed shipping/refund data.
-3. The final role-data mutation atomically created payment instructions and
-   changed the transaction to `WAITING_BUYER_PAYMENT` at state version 2.
-4. The Buyer payment projection returned:
-   - total `Rp275.000`;
-   - receiving bank `BCA`;
-   - exact local receiving account only to Buyer;
-   - original deadline exactly 24 hours after issuance, rendered in WIB.
-5. Seller received only `••••7890` for the same destination.
-6. Buyer submitted `Sudah Bayar`; the transaction changed to
-   `PAYMENT_UNDER_REVIEW` at state version 3.
-7. Repeating the same claim idempotency key returned the original claim ID and
-   timestamp without creating a second claim.
-8. A second transaction with its local deadline moved into the past was
-   processed by `npm run job:payment-expiry` and changed to `PAYMENT_EXPIRED`.
-9. The expiry runner did not change the claimed transaction and did not create
-   payment confirmation.
+| Scenario | Steps/evidence | Result |
+| --- | --- | --- |
+| Home page smoke test | Started `npm run dev -- -p 3005`, requested `http://localhost:3005/` | `200` |
+| Legacy manual instruction route | Requested `GET /api/transactions/test/payment-instructions` | `410 Gone` with safe migration message |
+| Legacy payment claim route | Requested `POST /api/transactions/test/payment-claim` | `410 Gone` with safe migration message |
+| Mobile-width surface | Reviewed the new payment panel in the existing `.app-shell` constrained layout; no desktop-wide dashboard was introduced | Pass |
+| Provider credential isolation | Adapter reads `MIDTRANS_SERVER_KEY` server-side; unit result contains only safe projection fields | Pass |
 
-Temporary accounts and transactions were deleted after the smoke test. No real
-bank transfer, bank review, or payment confirmation was performed.
+## Final Safety Review
 
-## Acceptance Criteria
+- [x] State transitions match the approved model: `WAITING_COUNTERPARTY_DATA` to `WAITING_BUYER_PAYMENT`, and invoice deadline expiry to `PAYMENT_EXPIRED` only.
+- [x] No `PAYMENT_CONFIRMED` or authoritative payment transition is implemented.
+- [x] Hosted Midtrans link replaces manual bank instructions as the primary payment path.
+- [x] Buyer/Seller participant authorization is enforced server-side; Admin is not granted payment confirmation authority.
+- [x] Provider secrets and raw provider payloads are not exposed to client, audit, or idempotency results.
+- [x] Idempotency, request-hash conflict, active-invoice uniqueness, state-version, and expiry race boundaries are covered.
+- [x] Issued invoice identity/amount/deadline fields are protected by PostgreSQL triggers.
+- [x] UI includes loading, disabled, error, pending/status, deadline, unauthorized, and recovery states in the mobile-width web shell.
+- [x] Unrelated user changes and prior BAYAR-003 work were preserved.
+- [x] Changed-file scope is limited to BAYAR-004 implementation, its required migration/schema fixture update, and this validation report.
 
-- Complete Buyer/Seller role data creates one immutable payment-instruction
-  snapshot and transitions to `WAITING_BUYER_PAYMENT`.
-- Exact integer amount comes from frozen transaction terms.
-- Original deadline is created once, stored as an absolute timestamp, and
-  displayed in WIB.
-- Buyer can read the exact receiving destination and Seller receives only the
-  masked destination.
-- One active payment claim is enforced by the PostgreSQL partial unique index
-  `payment_claims(transaction_id) WHERE active = true`.
-- Only the verified Buyer participant can submit `Sudah Bayar`.
-- Timely claim transitions to `PAYMENT_UNDER_REVIEW` and preserves the original
-  deadline.
-- Duplicate claim requests return the original idempotent result.
-- Expiry only processes unpaid `WAITING_BUYER_PAYMENT` transactions after the
-  deadline, using a state/version guard and post-update audit.
-- Expiry reruns do not duplicate the transition or audit event.
-- Partial, excess, duplicate, and late external-fund observations remain
-  non-authoritative and do not produce `PAYMENT_CONFIRMED`, a deadline reset,
-  fulfillment authorization, or a new state.
-- UI-SCR-009 and UI-SCR-010 include payable, loading, disabled, error/retry,
-  review, expired, unauthorized, keyboard, label, and responsive states.
-- UI-SCR-021 remains deferred/disabled; no cancellation API or cancellation
-  transition was implemented.
-- Product roles and transaction states remain the approved vocabulary.
+## Handoff
 
-## Scope Confirmation
+~~~text
+Summary:
+- BAYAR-004 now creates an idempotent Midtrans payment link from frozen
+  transaction terms, exposes hosted checkout/status refresh, and expires the
+  unpaid transaction against the original absolute deadline.
+- Legacy manual payment routes are quarantined with 410 Gone.
+- Webhook authority, Get Status reconciliation, refund, payout, and money
+  movement remain outside this ticket for BAYAR-005/later tickets.
 
-- BAYAR-005 bank review and payment confirmation were not implemented.
-- No refund, payout, WhatsApp, fulfillment, cancellation, complaint, risk hold,
-  or money movement behavior was added.
-- No new transaction state or product role was added.
-- OrbStack is used only as the local PostgreSQL runtime.
-- The production scheduler is not provisioned by this ticket; it invokes the
-  bounded expiry function in the deployment environment.
+Verification:
+- 25 automated tests passed, including PostgreSQL integration tests.
+- Typecheck, lint, build, migration, index/trigger checks, HTTP smoke tests,
+  PostgreSQL health, and git diff check passed.
 
-## Residual Risks
+Changed files:
+- `src/server/providers/`
+- `src/server/payment/invoice.ts`
+- `src/server/db/schema.ts`
+- `drizzle/0006_bayar004_invoice_integrity.sql`
+- `drizzle/meta/_journal.json`
+- `src/server/jobs/payment-expiry.ts`
+- `src/server/jobs/run-payment-expiry.ts`
+- `src/app/api/transactions/[id]/payment-link/route.ts`
+- `src/app/api/transactions/[id]/payment-status/route.ts`
+- legacy payment route quarantine files
+- `src/components/transactions/status.tsx`
+- `src/app/globals.css`
+- `tests/unit/payment-invoice.test.ts`
+- `tests/integration/foundation.test.ts`
 
-- Receiving-account configuration must be supplied securely in each runtime;
-  `.env.example` contains placeholders and no real account value.
-- The local expiry runner is validated, but production scheduler wiring and
-  operational monitoring remain deployment work.
-- Raw receiving-account values are restricted by application projection and
-  logging boundaries; production database-at-rest encryption and secret
-  management remain infrastructure responsibilities.
-- No real bank integration or browser automation suite exists yet; Admin bank
-  review is intentionally deferred to BAYAR-005.
-- `npm install` reports existing dependency audit findings (7 moderate,
-  6 high, 1 critical); forced upgrades were not introduced.
+Remaining risks/follow-up:
+- Configure and validate real Midtrans credentials and deployment only behind
+  the approved production launch gate.
+- BAYAR-005 must implement webhook signature validation, authoritative status
+  reconciliation, duplicate/out-of-order handling, and payment confirmation.
+- Production scheduler/monitoring remains deployment work.
+~~~
 
 ## Status
 
 ```text
 Implementation: Complete
 Validation: Passed with residual risks documented
+Scope: BAYAR-004 only
 ```

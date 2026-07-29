@@ -58,9 +58,9 @@ integration("BAYAR-001 PostgreSQL foundation", () => {
 
       await client.query(
         `INSERT INTO payment_invoices
-         (id, transaction_id, provider, provider_order_id, amount, deadline_at, is_active)
-         VALUES ($1, $2, 'MIDTRANS', $3, 10000, now() + interval '1 day', true)`,
-        [invoiceId, transactionId, `order-${invoiceId}`]
+         (id, transaction_id, provider, provider_order_id, amount, idempotency_reference, issued_at, deadline_at, is_active)
+         VALUES ($1, $2, 'MIDTRANS', $3, 10000, $4, now(), now() + interval '1 day', true)`,
+        [invoiceId, transactionId, `order-${invoiceId}`, `PAYMENT_INVOICE_CREATE:LEGACY:${invoiceId}`]
       );
       await expectConstraintFailure(() => client.query(
           `INSERT INTO payment_invoices
@@ -68,6 +68,12 @@ integration("BAYAR-001 PostgreSQL foundation", () => {
            VALUES ($1, 'MIDTRANS', $2, 10000, now() + interval '1 day', true)`,
           [transactionId, `order-${randomUUID()}`]
         ));
+      await client.query("UPDATE payment_invoices SET provider_status = 'PENDING' WHERE id = $1", [invoiceId]);
+      await expectConstraintFailure(() => client.query(
+        "UPDATE payment_invoices SET amount = 99999 WHERE id = $1",
+        [invoiceId]
+      ));
+      await expectConstraintFailure(() => client.query("DELETE FROM payment_invoices WHERE id = $1", [invoiceId]));
 
       await client.query(
         `INSERT INTO idempotency_keys (actor_scope, command, key, request_hash)

@@ -1,149 +1,164 @@
-# BAYAR-004 Codebase Research
+# Codebase Research
 
 ## Task
 
-```text
-Ticket ID/title: BAYAR-004 — Payment Instructions, Sudah Bayar Claim,
-and Original Expiry
-Requested outcome: Enable a completed transaction to receive immutable
-payment instructions, allow the Buyer to submit one idempotent Sudah Bayar
-claim, and expire unpaid transactions at the original 1x24-hour deadline.
-Source requirements: UR-BUYER-004, UR-BUYER-005, UR-BUYER-009,
-UR-SYSTEM-004 through UR-SYSTEM-007, UR-PARTICIPANT-001,
-UR-BR-008, UR-BR-009, UR-BR-010, UR-BR-030, UR-BR-031, UR-BR-034
-Source UX Flow/UI/QA IDs: UX-FLOW-013, UX-FLOW-014, UX-FLOW-044,
-UX-FLOW-045, UX-FLOW-046, UX-FLOW-048; UI-SCR-009, UI-SCR-010,
-UI-SCR-021; QA-PAY-001 through QA-PAY-003, QA-PAY-009,
-QA-EXP-001, QA-EXP-002, QA-UI-002
-```
+~~~text
+Ticket ID/title: BAYAR-004 — Midtrans Invoice, Hosted Checkout, and Payment Expiry
+Requested outcome: Create one idempotent Midtrans payment link from frozen
+transaction terms, expose hosted checkout/status refresh to Buyer, and expire
+unpaid transactions at the original absolute 1x24-hour deadline.
+Source requirements: UR-BUYER-004/005/009, UR-SYSTEM-004..007,
+UR-PARTICIPANT-001, UR-BR-008..010, UR-BR-030/031/033..035
+Source UX Flow/UI/QA IDs: UX-FLOW-013/014/044..046/048;
+UI-SCR-009/010/021; QA-MP-001..004, QA-PAY-001..003,
+QA-EXP-001/002, QA-UI-002
+~~
+
+Status: Draft
 
 ## Relevant Context Read
 
 | File/doc | Why it is relevant | Key constraint found |
 | --- | --- | --- |
-| `AGENTS.md` | Repository workflow and context boundary | Work on one ticket; use approved ticket/design inputs; do not infer product behavior from prototype |
-| `docs/engineering/tickets/BAYAR-004-payment-instructions-sudah-bayar.md` | Ticket scope and acceptance criteria | Payment instructions and claim only; bank review, confirmation, refund, and payout are out of scope |
-| `TRD.md` sections 6, 7, 8, 9, 12, 13, 16 | Approved state, data, API, UI, job, concurrency, and test contracts | Both role datasets transition to `WAITING_BUYER_PAYMENT`; claim transitions to `PAYMENT_UNDER_REVIEW`; original deadline is immutable; expiry does not bypass a timely claim |
-| `docs/product/03-user-requirements.md` | Requirement behavior | Exact amount and BayarAman destination are shown to Buyer; claim is not confirmation; late/not-found behavior remains manual/exception handling |
-| `docs/product/04-ui-ux-spec.md` | Payment screen states | `UI-SCR-010` owns Buyer instructions and claim; loading, error, disabled, expired, and manual-review states are required |
-| `docs/product/05-qa-scenarios.md` | Executable coverage | Payment claim, unchanged deadline, partial top-up, exception inputs, and expiry scenarios must remain distinguishable |
-| `src/server/db/schema.ts` | Existing persistence | `payment_instructions` and `payment_claims` already exist; there is no claim uniqueness or deadline job implementation yet |
-| `src/server/domain/transaction/state.ts` | State vocabulary | Approved transaction states and financial result vocabulary already exist; no new state may be added |
-| `src/server/transaction/service.ts` | BAYAR-003 transition/data pattern | Transaction mutation uses Drizzle transactions, idempotency, audit events, and optimistic state versioning |
-| `src/server/transaction/read.ts` | Participant read/masking pattern | Participant-only reads and masked bank/contact projections already exist; payment read must extend this boundary without exposing unrelated raw data |
-| `src/app/transactions/[id]/page.tsx`, `src/components/transactions/status.tsx` | Current UI surface | Current status page explicitly says payment instructions are not yet implemented; it has a basic mobile-width shell and no payment action |
+| `AGENTS.md` | Repository and execution safety rules | Work on one ticket; preserve prior changes; use approved ticket plan before coding |
+| `docs/engineering/tickets/BAYAR-004-payment-instructions-sudah-bayar.md` | Ticket scope and acceptance criteria | Midtrans `payment_type: payment_link`; no webhook/payment confirmation in this ticket; expiry belongs here |
+| `docs/execution/BAYAR-003/04-validation.md` | Previous ticket handoff | BAYAR-003 leaves complete role data in `WAITING_COUNTERPARTY_DATA` and does not create payment instructions |
+| `PRD.md` v0.2 | Approved product boundary | Hosted Midtrans payment, authority/reconciliation boundary, original deadline, and late-fund non-revival |
+| `TRD.md` v1.2 | Technical state/schema contract | `payment_invoices`, provider-neutral payment boundary, state version, idempotency, immutable evidence, and approved states |
+| `src/server/db/schema.ts` | Current persistence | Midtrans invoice/provider-event/reconciliation tables already exist; legacy manual payment tables remain compatibility-only |
+| `src/server/transaction/service.ts` | BAYAR-003 handoff | Role-data completion now freezes `transaction_terms.frozen_at`, remains `WAITING_COUNTERPARTY_DATA`, and exposes derived readiness |
+| `src/server/payment/payment.ts` | Existing payment implementation | Legacy manual-bank instruction/claim flow; must be replaced or isolated from the new Midtrans path |
+| `src/server/payment/config.ts`, `projection.ts` | Legacy receiving account/UI projection | Manual receiving-bank config is not the new primary payment flow |
+| `src/server/jobs/payment-expiry.ts`, `run-payment-expiry.ts` | Existing expiry boundary | Current job reads legacy `payment_instructions` and `payment_claims`; it must not be reused without a Midtrans invoice boundary |
+| `src/app/api/transactions/[id]/payment-instructions/route.ts` | Existing payment route | Legacy manual payment response; must be replaced/deferred behind the new invoice/payment-link contract |
+| `src/app/api/transactions/[id]/payment-claim/route.ts` | Existing `Sudah Bayar` route | Legacy claim changes state to `PAYMENT_UNDER_REVIEW`; prohibited as payment confirmation in the new flow |
+| `src/components/transactions/status.tsx` | Current transaction UI | BAYAR-003 removed the legacy payment panel; Midtrans invoice/hosted-link/status UI is not implemented yet |
+| `tests/unit/payment.test.ts`, `tests/integration/*` | Test conventions | Vitest unit tests and optional PostgreSQL integration tests; payment tests currently target legacy config/projection/expiry behavior |
 
 ## Current Behavior
 
-- Entry point: an authenticated, verified Buyer or Seller opens
-  `/transactions/[id]`. BAYAR-003 exposes transaction status and role-owned
-  data only.
-- When both parties and role-owned data are complete, the API returns
-  `readyForPaymentInstructions: true`, but the transaction remains
-  `WAITING_COUNTERPARTY_DATA`.
-- No code currently creates a `payment_instructions` row, freezes item/terms
-  snapshots, starts an expiry deadline, or transitions to
-  `WAITING_BUYER_PAYMENT`.
-- No API route currently reads payment instructions or accepts
-  `Sudah Bayar`.
-- No expiry job, lazy expiry read, scheduler abstraction, or WIB clock helper
-  exists under `src/server/jobs/` or another equivalent module.
-- The existing transaction service demonstrates the required transaction,
-  state-version, idempotency, and append-only audit patterns, but it does not
-  contain payment behavior.
-- The current transaction UI is functional but intentionally basic. It uses
-  the constrained mobile-width `.app-shell`; the approved visual prototype
-  has not yet been fully ported.
+- BAYAR-003 completes both participant datasets by setting
+  `transaction_terms.frozen_at`, incrementing `state_version`, and retaining
+  `WAITING_COUNTERPARTY_DATA`. It does not create payment instructions,
+  invoices, payment deadlines, or claims.
+- The database already has `payment_invoices` with provider/order/link/status,
+  amount, `issued_at`, `deadline_at`, optional `due_date_at`, `is_active`, and
+  `retired_at`; it also has `payment_provider_events` and
+  `payment_reconciliations`. These tables are the intended Midtrans boundary.
+- `payment_invoices` already has one active invoice per transaction enforced by
+  a partial unique index. BAYAR-004 must use that constraint and must not
+  create a second invoice on duplicate/retry.
+- `src/server/payment/payment.ts` still implements the old manual-bank flow:
+  it reads role-owned data, creates `payment_instructions`, locks data,
+  advances to `WAITING_BUYER_PAYMENT`, and records
+  `PAYMENT_INSTRUCTIONS_ISSUED`. This path is not called by BAYAR-003 anymore,
+  but its routes/job remain and are not a valid Midtrans implementation.
+- The existing payment claim flow inserts a legacy `payment_claims` row and
+  changes `WAITING_BUYER_PAYMENT` to `PAYMENT_UNDER_REVIEW`. The new ticket
+  requires a Buyer status refresh boundary and must not use this as payment
+  confirmation.
+- `payment-expiry.ts` scans `payment_instructions`, ignores active claims,
+  and changes eligible transactions to `PAYMENT_EXPIRED`. It is not tied to
+  `payment_invoices`, invoice `deadline_at`, provider authority, or a
+  deterministic system/job idempotency boundary.
+- Midtrans adapter, hosted payment-link creation, provider request mapping,
+  provider secret isolation, and invoice status projection are not present.
+- `src/components/transactions/status.tsx` currently shows the pre-payment
+  readiness handoff and has no manual payment panel. The Midtrans link and
+  status states still need to be added within the existing mobile-width shell.
 
 ## Code Map
 
 | Responsibility | Existing file/module | Symbol/route | Notes |
 | --- | --- | --- | --- |
-| Transaction states and optimistic version | `src/server/domain/transaction/state.ts` | `TRANSACTION_STATES`, `assertExpectedStateVersion` | Reuse `WAITING_BUYER_PAYMENT`, `PAYMENT_UNDER_REVIEW`, and `PAYMENT_EXPIRED` only |
-| Payment instruction persistence | `src/server/db/schema.ts` | `paymentInstructions` | One row per transaction; currently stores masked destination, amount, issued time, and deadline |
-| Payment claim persistence | `src/server/db/schema.ts` | `paymentClaims` | Has claim ID, transaction, submitter, timestamp, active flag, metadata; no service uses it yet |
-| Existing payment review persistence | `src/server/db/schema.ts` | `paymentReviews` | Exists for BAYAR-005; do not implement bank review here |
-| Transaction mutation | `src/server/transaction/service.ts` | `createTransaction`, `joinInvitation`, `saveRoleData` | Provides Drizzle transaction and state-version mutation examples |
-| Transaction reads | `src/server/transaction/read.ts` | `readTransaction` | Participant authorization and masked projections; payment projection belongs here or a focused read module |
-| Idempotency | `src/server/transaction/mutation.ts` | `findIdempotentResult`, `saveIdempotentResult` | Reuse for instruction issuance and payment claim commands |
-| Audit | `src/server/transaction/audit.ts` | `recordTransactionEvent` | Reuse for `PAYMENT_INSTRUCTIONS_ISSUED`, `PAYMENT_CLAIM_SUBMITTED`, and `PAYMENT_EXPIRED` |
-| Transaction API | `src/app/api/transactions/[id]/route.ts` | `GET` | Existing authorized transaction read route |
-| Role-data API | `src/app/api/transactions/[id]/role-data/route.ts` | `GET`, `PATCH` | Existing participant mutation/error mapping pattern |
-| Transaction page | `src/app/transactions/[id]/page.tsx` | Server page | Existing transaction detail entry point |
-| Transaction status UI | `src/components/transactions/status.tsx` | `TransactionStatus` | Current UI must gain payment instruction/claim states without adding admin review |
-| Database migration | `drizzle/0000_open_kinsey_walden.sql`, `drizzle/0001_uneven_bedlam.sql` | Generated migrations | Payment tables are already present in the local schema; plan must verify whether any constraint migration is required |
+| Invoice persistence | `src/server/db/schema.ts` | `paymentInvoices` | Existing Midtrans-ready fields and active-invoice partial index |
+| Provider event persistence | `src/server/db/schema.ts` | `paymentProviderEvents` | Owned by BAYAR-005 webhook/reconciliation; BAYAR-004 should not implement webhook authority |
+| Reconciliation persistence | `src/server/db/schema.ts` | `paymentReconciliations` | Reserved for provider-status/manual reconciliation boundary |
+| Legacy payment creation | `src/server/payment/payment.ts` | `issuePaymentInstructions` | Manual-bank path; not a valid BAYAR-004 implementation target |
+| Legacy payment read | `src/server/payment/payment.ts` | `readPaymentInstructions` | Exposes manual receiving account and legacy claim state |
+| Legacy payment claim | `src/server/payment/payment.ts` | `submitPaymentClaim` | `Sudah Bayar` behavior; must not confirm Midtrans payment |
+| Receiving-account config | `src/server/payment/config.ts` | `getReceivingAccount` | Legacy manual-bank config; not primary Midtrans payment flow |
+| Legacy expiry | `src/server/jobs/payment-expiry.ts` | `expireDuePaymentInstructions` | Must be replaced or isolated to invoice deadline and no-claim logic |
+| Expiry runner | `src/server/jobs/run-payment-expiry.ts` | CLI entry | Local scheduler boundary available for deterministic job execution |
+| Transaction API | `src/app/api/transactions/[id]/route.ts` | `GET` | Participant-scoped status read; suitable base for invoice/status projection |
+| Legacy payment API | `src/app/api/transactions/[id]/payment-instructions/route.ts` | `GET` | Must not remain the primary payment UI contract |
+| Legacy claim API | `src/app/api/transactions/[id]/payment-claim/route.ts` | `POST` | Must not be exposed as `Sudah Bayar` in the new flow |
+| Transaction UI | `src/components/transactions/status.tsx` | `TransactionStatus` | Existing constrained mobile-width shell and loading/error message pattern |
+| Idempotency | `src/server/transaction/mutation.ts` | `findIdempotentResult`, `saveIdempotentResult` | Uses `(actor_scope, command, key)` and request hash |
+| Audit | `src/server/transaction/audit.ts` | `recordTransactionEvent` | Append-only transaction audit pattern |
+| Database runtime | `src/server/db/index.ts`, `compose.yaml` | PostgreSQL/OrbStack | Local validation runtime only; production remains PostgreSQL-compatible |
 
 ## Existing Patterns To Reuse
 
-- **Validation:** Zod schemas in `src/server/transaction/contracts.ts`, with
-  route-level `safeParse` and generic user-safe error responses.
-- **Data access:** Drizzle query/transaction APIs through `src/server/db`.
-  State and data mutations must be atomic.
-- **Authorization:** `requireAuthenticatedAccount` plus participant ownership;
-  only the Buyer participant may submit a payment claim.
-- **State changes:** Read current transaction, validate expected state version,
-  update state and version in one database transaction, and audit the result.
-- **Idempotency:** Require `Idempotency-Key`, hash the request body, return the
-  original result for a duplicate key, and reject a changed request hash.
-- **UI:** Existing `.app-shell`, `.surface`, and transaction status component;
-  preserve the approved mobile-width web surface while adding payment states.
-- **Loading/error/recovery:** Client components use local busy/message state;
-  server errors preserve the current trusted transaction state and allow retry
-  with the same idempotency key.
-- **Testing:** Vitest unit tests in `tests/unit`; database/integration tests
-  should use the local PostgreSQL container and fixed clocks for deadlines.
+- Use Drizzle transactions for invoice creation, active-invoice lookup,
+  transaction state/version update, idempotency result, and audit event.
+- Resolve actor identity server-side through the existing session and
+  participant authorization helpers; do not trust client account IDs.
+- Use `findIdempotentResult`/`saveIdempotentResult` with an account or system
+  actor scope and request hash; duplicate requests return the stored result.
+- Keep provider credentials in server-only configuration. Return only the
+  hosted payment URL, frozen amount, provider status, and absolute WIB
+  deadline to authorized participants.
+- Use conditional updates with transaction ID, exact state, state version, and
+  invoice deadline for expiry. Write `PAYMENT_EXPIRED` audit only after the
+  state update succeeds.
+- Keep UI in the existing `.app-shell` constrained mobile-width surface and
+  reuse its loading, disabled, error, and recovery message patterns.
+- Use fixed-clock unit tests for deadline boundaries and PostgreSQL integration
+  tests for active-invoice uniqueness, concurrent creation, state-version
+  conflicts, and expiry reruns.
 
 ## Change Surface
 
 | Area | Likely change? | Reason/risk |
 | --- | --- | --- |
-| UI | Yes | Add `UI-SCR-010` payment instructions, claim action, countdown/deadline, disabled/loading/error/expired/review states; preserve mobile-width shell |
-| API | Yes | Add authorized payment-instruction read and Buyer-only `Sudah Bayar` mutation route; exact route names must be finalized in the plan against TRD |
-| State | Yes | Add only approved transitions: `WAITING_COUNTERPARTY_DATA` -> `WAITING_BUYER_PAYMENT`, `WAITING_BUYER_PAYMENT` -> `PAYMENT_UNDER_REVIEW`, and unpaid expiry -> `PAYMENT_EXPIRED` |
-| Database | Maybe | Existing tables cover the core rows; likely add constraints/indexes or immutable snapshot fields only if the plan finds a concrete gap |
-| Auth | No | Reuse verified session and participant authorization from BAYAR-002/BAYAR-003 |
-| Jobs/integrations | Yes | Add deterministic expiry command/job boundary; no bank reconciliation, WhatsApp provider, or money movement integration |
-| Tests/docs | Yes | Add unit/integration tests, fixed-WIB deadline tests, and `docs/execution/BAYAR-004/04-validation.md` after implementation |
+| UI | Yes | Add hosted Midtrans link, frozen amount/deadline/status refresh, and loading/error/expired/unauthorized states for UI-SCR-009/010/021 |
+| API | Yes | Add provider-neutral invoice creation/read/status-refresh boundary; remove legacy manual payment as the primary contract |
+| State | Yes | Transition complete frozen data to `WAITING_BUYER_PAYMENT`; expire only that state to `PAYMENT_EXPIRED`; no new state |
+| Database | Maybe | Reuse existing `payment_invoices`/constraints; add only fields/indexes required by approved ticket if current schema is insufficient |
+| Auth | Yes | Buyer/Seller participant authorization for payment-link read/status refresh; no Admin payment decision in BAYAR-004 |
+| Jobs/integrations | Yes | Midtrans payment-link adapter boundary and deterministic invoice expiry job; no webhook authority or real money confirmation |
+| Tests/docs | Yes | Add provider fake, idempotency, frozen amount/deadline, expiry, late-fund, access, and UI-state tests; update validation later |
 
 ## Unknowns And Assumptions
 
 | Item | Can be inferred safely? | Evidence or decision needed |
 | --- | --- | --- |
-| How payment instructions are issued | Yes, at implementation level | Approved TRD transition says the system issues them once both role datasets are complete; the plan must make this one atomic command/transition |
-| Exact BayarAman receiving account source | No | Product requires an exact destination, while the current `payment_instructions` table stores only a masked destination. Plan must define a server-side/configured source and its safe projection; do not invent a new product rule |
-| Public API route names | Partly | TRD defines the interface boundary but not every exact path for payment read/claim. Plan must choose concrete paths consistent with existing `/api/transactions/[id]` routing |
-| Whether issuance is lazy or explicit | Yes, with technical choice | Product behavior requires instructions when payable; plan should choose an idempotent service invoked from role-data completion and/or a safe lazy repair path, without issuing twice |
-| Expiry execution mechanism | No implementation exists | Plan must choose a local-testable job function plus production scheduler contract; lazy read may be a recovery guard but must not replace the due-time sweep requirement |
-| Claim metadata | Yes, narrowly | Claim may store submitted timestamp and optional non-authoritative note/metadata; no bank evidence or payment confirmation belongs here |
-| Partial, excess, duplicate, or late funds | Yes | Preserve them as future Admin exception inputs; BAYAR-004 must never mark `PAYMENT_CONFIRMED` or implement bank review |
-| Deadline timezone | Yes | Store an absolute timestamp and calculate from issuance using the approved 1x24-hour rule; render WIB and test with fixed clocks |
-| Payment instruction account visibility | No | Buyer needs the exact receiving destination; Seller/Admin view must follow the approved sensitive-data boundary. Plan must specify raw/masked projection explicitly |
+| Midtrans SDK versus direct HTTP client | No | Implementation plan must choose a provider-neutral adapter shape; production credential/deployment remains launch-gated |
+| Exact invoice response fields | Partly | Persist only approved provider invoice ID, hosted URL, status, amount, issued/deadline, and idempotency reference |
+| Provider `due_date` support | Yes for boundary | Send BayarAman absolute deadline when supported; never let provider retry reset the BayarAman deadline |
+| Webhook confirmation | Yes | Defer authoritative webhook validation and reconciliation to BAYAR-005; BAYAR-004 must not mark paid |
+| Status refresh behavior | Yes for boundary | Buyer refresh reads current invoice/provider status; it cannot create payment authority or change to paid |
+| Expiry after provider success arrives late | Yes | Keep expired/cancelled transaction closed; route late funds to the later reconciliation/refund boundary without revival |
+| Legacy payment routes | No | Plan must decide whether to remove, quarantine, or leave compatibility routes without allowing them as the primary UI contract |
+| System/job actor identity | Yes | Use `SYSTEM:<job-name>` idempotency scope; do not create a product account or role |
 
 ## Research Conclusion
 
-```text
-Recommended implementation boundary:
-Add a focused payment instruction/claim service, authorized read and claim
-routes, an atomic payable transition from completed role data, immutable
-payment snapshot/deadline handling, and a deterministic expiry job boundary.
-Extend the existing transaction status UI only for the approved payment
-states. Keep bank review, payment confirmation, exception adjudication,
-refund, payout, WhatsApp, and notification delivery outside BAYAR-004.
+~~~text
+Recommended implementation boundary: Build a server-only, provider-neutral
+Midtrans Invoice API adapter for `payment_type: payment_link`; create exactly
+one active invoice from frozen transaction terms; persist the hosted URL,
+provider reference/status, amount, absolute 1x24-hour deadline, optional due
+date, and idempotency result; expose an authorized Buyer/Seller status/link
+projection; and replace the legacy instruction-based expiry with an atomic,
+fixed-clock-safe invoice expiry job. Keep webhook signature/authority,
+payment confirmation, Admin reconciliation, refund, payout, and money movement
+out of BAYAR-004 for BAYAR-005 or their owning tickets.
 
-Main risks:
-The current payment instruction schema does not retain an exact receiving
-account value, and no scheduler/clock abstraction exists. Incorrect ordering
-could issue instructions twice, reset the deadline, expire an active claim,
-or expose raw financial data. State-version and idempotency handling must cover
-instruction issuance, claim submission, and expiry.
+Main risks: the old manual-bank payment service/routes/job still exist;
+Midtrans adapter credentials and response mapping are undecided; invoice
+creation must not race or reset frozen amount/deadline; provider outage and
+late status must remain non-authoritative; and an expired transaction must
+never be revived. The existing payment tables and `payment_invoices` schema
+must remain compatible while the new path is introduced.
 
-Files likely affected:
-`src/server/db/schema.ts` only if a concrete schema gap is confirmed,
-`src/server/transaction/`, `src/app/api/transactions/`,
-`src/app/transactions/[id]/page.tsx`, `src/components/transactions/status.tsx`,
-`src/app/globals.css`, tests, and a new focused job/clock module.
+Files likely affected: `src/server/payment/` adapter/config/projection,
+transaction payment-link service and routes, `src/server/jobs/payment-expiry.ts`,
+`src/app/api/transactions/[id]/...`, `src/components/transactions/status.tsx`,
+focused payment unit/integration tests, and possibly an additive schema
+migration only if the approved plan identifies a missing invoice field.
 
-Ready to plan: Yes, with the exact receiving-account projection and expiry
-execution mechanism recorded as implementation-plan decisions. No product
-decision is currently required to begin planning.
-```
+Ready to plan: Yes, after choosing the adapter contract and explicitly
+preserving the BAYAR-005 webhook/payment-authority boundary.
+~~~

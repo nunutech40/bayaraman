@@ -3,72 +3,92 @@
 ## Review Metadata
 
 ~~~text
-Ticket: BAYAR-003 — Transaction Creation, Role-Owned Data, and Counterparty Join
+Ticket: BAYAR-003 — Transaction Creation, Role-Owned Data, and Invitation Join
 Plan reviewed: docs/execution/BAYAR-003/02-plan.md v0.1 Draft
-Reviewer: Engineering Review
+Reviewer: Codex
 Decision: Approved
-Reviewed on: 2026-07-23
+Status: Approved
+Reviewed on: 2026-07-29
 ~~~
 
 ## Traceability Review
 
 | Requirement/UX/UI/AC | Planned step | Verification | Covered? |
 | --- | --- | --- | --- |
-| AC-1: verified account creates Seller/Buyer transaction | Steps 2, 3, 4, 9 | Creation integration tests for both creator roles | Yes |
-| AC-2: opposite verified account joins and completes own data | Steps 5, 6, 9, 10 | Join, role-data ownership, and completion tests | Yes |
-| AC-3: self-join/cross-role mutation is rejected and audited | Steps 5, 7, 8, 11 | Authorization denial, audit, and same-account tests | Yes |
-| AC-4: complete role data hands off to payment readiness | Step 6 and Payment Handoff Contract | Derived readiness test with no instruction/timer write | Yes |
-| UR-INIT-001..005 and UR-BR-001 | Steps 3, 4, 5 | Creation, invitation, distinct-account, and lifecycle tests | Yes |
-| UR-BUYER-001..003 and UR-SELLER-001..003 | Steps 2, 3, 5, 6 | Role-specific validation and ownership tests | Yes |
-| UR-PARTICIPANT-001..003 and UR-SYSTEM-001 | Steps 6, 7, 8 | Snapshot, masking, idempotency, and audit tests | Yes |
-| UX-FLOW-002..006, UX-FLOW-009..012 | Steps 3..10 | API and screen implementation mapping | Yes |
-| UI-SCR-002..009 | Step 10 | Mobile-width state and interaction tests | Yes |
-| QA-TRANS-001..006, QA-SEC-001, QA-UI-001 | Step 11 | Unit, integration, security, and UI verification | Yes |
+| AC-1: verified Buyer/Seller creation and one invitation | 2-4 | Creation, validation, idempotency, token, and authorization tests | Yes |
+| AC-2: verified opposite-role join and role completion | 5-6 | Join, ownership, state-version, freeze, and readiness tests | Yes |
+| AC-3: distinct account, ownership, masking, and audit rejection | 5, 7, 8 | Concurrent join, DTO, authorization, and sanitized audit tests | Yes |
+| AC-4: frozen readiness without payment creation | 6 and Payment Handoff Contract | Freeze guard and no-payment-boundary integration tests | Yes |
+| UR-INIT-001..005 | 2-5 | Create, preview, join, reissue, expiry/revoke/use, and rejection tests | Yes |
+| UR-BUYER-001..003 and UR-SELLER-001..003 | 2, 3, 5, 6 | Role-specific validation, ownership, and snapshot tests | Yes |
+| UR-PARTICIPANT-001..003 and UR-SYSTEM-001 | 5-8 | Participant binding, masking, idempotency, state, and audit tests | Yes |
+| UX-FLOW-002..006 and UX-FLOW-009..012 | 3-9 | API and UI implementation mapping | Yes |
+| UI-SCR-002..009 and QA-TRANS-001..006, QA-SEC-001, QA-UI-001 | 9-10 | Unit, integration, security, and manual UI checks | Yes |
 
 ## Safety And Correctness Review
 
 | Check | Result | Evidence/comment |
 | --- | --- | --- |
-| Matches approved user journey | Pass | Both initiator paths, invitation handoff, opposite participant, and role-owned data are covered |
-| Matches approved UX Flow and UI/UX states | Pass | UI-SCR-002..009 and invitation preview/join/reissue states have implementation boundaries |
-| Respects state transition guards | Pass | Only `WAITING_COUNTERPARTY` and `WAITING_COUNTERPARTY_DATA` are used; payment handoff is explicit |
-| Preserves actor authorization | Pass | Session/database actor resolution, distinct account, opposite role, and field ownership are specified |
-| Handles sensitive/financial data safely | Pass | Buyer address, payout/refund destinations, raw/masked projections, ownership, and lock behavior are explicit |
-| Keeps manual/system boundaries explicit | Pass | Payment instructions, timer, bank review, and external invitation sharing are outside this ticket |
-| Covers failure, retry, and duplicate action | Pass | Invitation expiry/reissue, idempotency, stale version, concurrency, and recovery are covered |
-| Includes proportional tests | Pass | Unit, integration, database, security, route, and mobile UI cases cover the ticket risk |
-| Covers relevant responsive and accessibility behavior | Pass | Constrained mobile-width UI and state behavior are included; existing shell accessibility conventions apply |
-| Avoids unrelated changes | Pass | No payment, financial operation, provider integration, or later ticket scope is planned |
+| Matches approved user journey | Pass | Both initiator paths, invitation handoff, distinct counterparty, and role-owned data are covered |
+| Matches approved UX Flow and UI/UX states | Pass | Pre-payment screens, waiting/frozen states, and recovery states are scoped |
+| Respects state transition guards | Pass | Only `WAITING_COUNTERPARTY` and `WAITING_COUNTERPARTY_DATA` are planned; payment handoff remains downstream |
+| Preserves actor authorization | Pass | Creation/join/reissue require authenticated verified accounts; creator, opposite-role, Admin, ownership, and state checks are explicit |
+| Handles sensitive/financial data safely | Pass | Raw/masked destinations, hashed tokens, sanitized audit, and no-payment boundary are explicit |
+| Keeps manual/system boundaries explicit | Pass | Invitation sharing is manual; Midtrans/payment/financial operations are excluded |
+| Covers failure, retry, and duplicate action | Pass | Idempotency, state-version conflict, migration collision, freeze rejection, and concurrent mutation recovery are explicit |
+| Includes proportional tests | Pass | Unit, PostgreSQL, API, security, concurrency, migration, and manual UI checks match the ticket risk |
+| Covers relevant responsive and accessibility behavior | Pass | Mobile-width surface and UI state checks remain manual and in scope |
+| Avoids unrelated changes | Pass | No payment, provider, payout, refund, cancellation, risk, WhatsApp group, or later-ticket scope is planned |
 
 ## Findings
 
-No blocking findings. Previous findings are addressed:
+| Severity | Finding | Resolution |
+| --- | --- | --- |
+| Blocker | Invitation reissue previously lacked an explicit verified-WhatsApp requirement. | Closed: Step 4, API contract, authorization impact, and tests require a valid session, verified WhatsApp, non-Admin creator ownership, `WAITING_COUNTERPARTY`, state version, and idempotency. |
+| High | Active invitation migration previously lacked duplicate preflight and recovery behavior. | Closed: `0005_bayar003_invitation_boundary.sql` includes PostgreSQL `DO` preflight, consistent `invitations_one_active_target_idx`, journal/test coverage, and recovery instructions. |
+| High | Freeze enforcement previously lacked an exact mutation guard. | Closed: role-data writes require `frozen_at IS NULL`, transaction ID, `WAITING_COUNTERPARTY_DATA`, and expected state version; attempted writes after freeze are tested. |
+| Medium | Index/schema/journal naming and revoked/used compatibility needed to be explicit. | Closed: the same index name is required across schema, migration, journal, and inspection tests; revoked/used rows are excluded by the partial predicate. |
+| Medium | Rejection audit ownership and duplicate prevention needed a concrete boundary. | Closed: the transaction/domain mutation service owns one sanitized rejection event and one correlation ID per rejected command, with route/service assertions. |
 
-- `buyer_shipping_addresses` now has explicit fields, ownership, foreign keys,
-  uniqueness, masking, and lock behavior.
-- Invitation preview, join, and reissue routes are concrete and define token,
-  authentication, idempotency, state-version, and recovery behavior.
-- Payout/refund destination tables now define keys, raw/masked projections,
-  ownership, and the BAYAR-004 lock boundary.
+## Scope Leak Review
+
+The research identified the legacy `saveRoleData` path that calls
+`issuePaymentInstructions` and transitions to `WAITING_BUYER_PAYMENT`. The
+plan explicitly removes that BAYAR-003 scope leak while retaining legacy
+`payment_instructions` as compatibility-only. Midtrans invoice/payment,
+webhook, payment review, payout, refund, WhatsApp group, cancellation, risk,
+and complaint behavior remain outside this ticket.
 
 ## Decision
 
 ~~~text
 Decision: Approved
+
 Required changes before execution: None.
-Residual risks accepted: BAYAR-004 must consume the derived readiness contract,
-create payment instructions, set destination lock timestamps, and start the
-payment deadline. BAYAR-003 must not implement those behaviors.
+
+Residual risks accepted:
+1. The migration preflight will fail in an environment containing duplicate
+   active invitations; operators must resolve those rows before rerunning the
+   unchanged migration.
+2. Distinct-account enforcement spans participant rows and therefore remains
+   a transaction-locked service invariant with concurrency tests, rather than
+   a single-row database check.
+3. Responsive/accessibility validation remains a manual checklist for this
+   ticket and does not add browser automation.
+4. The legacy payment table remains compatibility-only until the owning
+   payment ticket replaces the old boundary.
 ~~~
 
 ## Review Completion
 
-- [x] Ticket scope and BAYAR-004 payment handoff were checked.
-- [x] Requirement, UX, UI, QA, authorization, and state coverage was checked.
-- [x] All role-owned data has an explicit persistence and masking contract.
-- [x] Buyer shipping-address persistence and permission boundary are explicit.
-- [x] Invitation preview, join, and reissue route contracts are concrete.
-- [x] Destination keys, raw/masked projections, and immutable lock behavior are explicit.
-- [x] No new product role or transaction state was introduced.
-- [x] Failure, retry, idempotency, concurrency, and audit behavior was checked.
-- [x] Plan Review is Approved.
+- [x] Reviewed against `docs/execution/templates/plan-review-template.md`.
+- [x] Reviewed against the BAYAR-003 ticket, research, current plan, PRD v0.2, and TRD v1.2.
+- [x] Verified reissue authentication, WhatsApp verification, creator ownership, and state guard.
+- [x] Verified migration preflight, index naming, journal entry, collision test, and recovery path.
+- [x] Verified exact `frozen_at` write guard and BAYAR-004 ownership of payable-time `locked_at`.
+- [x] Verified sanitized rejection audit boundary, one correlation ID, and sensitive-data exclusions.
+- [x] Verified no payment/provider behavior, new role, new transaction state, or later-ticket scope.
+- [x] Verified traceability and executable validation coverage.
+- [x] `git diff --check` passed.
+
+Plan Review status: Approved. BAYAR-003 may proceed to implementation.

@@ -1,9 +1,9 @@
 import "dotenv/config";
-import { expireDuePaymentInstructions } from "./payment-expiry";
+import { expirePaymentInvoices } from "./payment-expiry";
 
-expireDuePaymentInstructions()
+expirePaymentInvoices()
   .then((expired) => {
-    console.log(`Expired payment instructions: ${expired}`);
+    console.log(`Expired payment invoices: ${expired}`);
   })
   .catch((error: unknown) => {
     console.error("Payment expiry job failed", error);

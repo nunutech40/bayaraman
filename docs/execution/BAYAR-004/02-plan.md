@@ -1,267 +1,299 @@
-# BAYAR-004 Implementation Plan
-
-## Metadata
-
-```text
-Ticket: BAYAR-004 — Payment Instructions, Sudah Bayar Claim, and Original Expiry
-Version: 0.1
-Status: Draft
-Depends on: BAYAR-003 implementation and validation
-Plan scope: Payment instructions, Buyer payment claim, and original expiry only
-```
+# Implementation Plan
 
 ## Task
 
-```text
-Ticket ID/title: BAYAR-004 — Payment Instructions, Sudah Bayar Claim,
-and Original Expiry
-Outcome: A complete Buyer/Seller transaction becomes payable once, exposes
-immutable payment instructions to the Buyer, accepts one timely idempotent
-Sudah Bayar claim, and expires unpaid instructions at the original 1x24-hour
-deadline without payment confirmation.
+~~~text
+Ticket ID/title: BAYAR-004 — Midtrans Invoice, Hosted Checkout, and Payment Expiry
+Outcome: Create one idempotent Midtrans Invoice API payment link from frozen
+transaction terms, expose the hosted checkout/status boundary to participants,
+and expire unpaid transactions at the original absolute 1x24-hour deadline.
 Source research: docs/execution/BAYAR-004/01-research.md
-Source requirements and QA scenarios: UR-BUYER-004, UR-BUYER-005,
-UR-BUYER-009, UR-SYSTEM-004 through UR-SYSTEM-007, UR-PARTICIPANT-001,
-UR-BR-008, UR-BR-009, UR-BR-010, UR-BR-030, UR-BR-031, UR-BR-034;
-QA-PAY-001 through QA-PAY-003, QA-PAY-009, QA-EXP-001, QA-EXP-002,
-QA-UI-002
-Source UX Flow and UI IDs/states: UX-FLOW-013, UX-FLOW-014,
-UX-FLOW-044, UX-FLOW-045, UX-FLOW-046, UX-FLOW-048;
-UI-SCR-009, UI-SCR-010, UI-SCR-021
-```
+Source requirements and QA scenarios: UR-BUYER-004/005/009,
+UR-SYSTEM-004..007, UR-PARTICIPANT-001, UR-BR-008..010, UR-BR-030/031/033..035;
+QA-MP-001..004, QA-PAY-001..003, QA-EXP-001/002, QA-UI-002
+Source UX Flow and UI IDs/states: UX-FLOW-013/014, UX-FLOW-044..046/048;
+UI-SCR-009/010/021
+~~
+
+Version: 0.1
+Status: Draft
+Depends on: BAYAR-003 implementation and validation
+Blocks: BAYAR-005
 
 ## Scope
 
 ### In Scope
 
-- Atomic issuance of payment instructions when both participant datasets are
-  complete.
-- Immutable exact amount and receiving-account snapshot.
-- Original 1x24-hour deadline calculated from instruction issuance and rendered
-  in WIB.
-- Buyer-only payment-instruction read and `Sudah Bayar` claim.
-- One active claim, idempotency, state-version protection, and audit events.
-- Deterministic expiry service/job boundary with fixed-clock tests.
-- Buyer/Seller transaction status UI for payable, claim, review, loading,
-  disabled, expired, error, and retry states.
+- Provider-neutral Midtrans Invoice API adapter using `payment_type: payment_link`.
+- One active invoice per transaction with frozen amount, hosted URL, invoice ID,
+  provider status, issued timestamp, absolute deadline, optional provider due date,
+  and idempotent result.
+- Authorized hosted checkout/status projection and `Cek status pembayaran` refresh.
+- Transition from complete frozen role data to `WAITING_BUYER_PAYMENT`.
+- Deterministic invoice expiry job for the original 1x24-hour deadline.
+- Late-payment non-revival boundary and handoff to later reconciliation/refund work.
+- Loading, disabled, provider-error, pending, expired, unauthorized, and recovery UI.
 
 ### Out Of Scope
 
-- Admin bank review, payment confirmation, payment evidence, or
-  `PAYMENT_EXCEPTION_REVIEW` handling.
-- Partial/excess/duplicate/late-fund adjudication; these remain inputs for
-  BAYAR-005 and later operational flows.
-- WhatsApp group creation, notifications, fulfillment, confirmation OTP,
-  complaint, cancellation, refund, payout, or money movement.
-- Visual redesign or full prototype port.
+- Webhook signature validation, authoritative payment confirmation,
+  duplicate/delayed/out-of-order webhook reconciliation, and Admin payment decisions;
+  these belong to BAYAR-005.
+- `PAYMENT_CONFIRMED` production behavior, bank evidence, payment claims,
+  `Sudah Bayar`, refund, payout, split settlement, money movement, WhatsApp,
+  cancellation, complaint, and risk operations.
 - New product roles, transaction states, or financial operation results.
+- Production credential deployment, merchant settlement, custody, legal/compliance,
+  and real-money launch approval.
 
 ## Approved Implementation Decisions
 
-1. **Receiving account configuration:** Add server-side configuration for
-   `BAYARAMAN_RECEIVING_BANK_NAME`, `BAYARAMAN_RECEIVING_ACCOUNT_NUMBER`, and
-   `BAYARAMAN_RECEIVING_ACCOUNT_HOLDER`. The application fails closed outside
-   test when the values are missing or invalid. Tests use a non-production
-   fixture. The exact account number is copied into the instruction snapshot at
-   issuance so later configuration changes cannot alter an existing payable
-   transaction. Add placeholder names only to `.env.example`; real local
-   values remain in the ignored `.env` and are never committed.
-2. **Sensitive projection:** Add a restricted exact account snapshot field to
-   `payment_instructions`. Only the Buyer participant receives the exact value;
-   Seller and non-authorized views receive the masked value. The raw value is
-   excluded from audit payloads, structured logs, idempotency results, and
-   generic transaction projections.
-3. **Instruction issuance:** Invoke one idempotent `issuePaymentInstructions`
-   service from the final role-data completion transaction. It locks the item,
-   terms, shipping, and destination snapshots, inserts one instruction row,
-   sets the original deadline, and transitions the transaction to
-   `WAITING_BUYER_PAYMENT`. A retry returns the existing instruction/result and
-   never resets the deadline.
-4. **API routes:** Use `GET /api/transactions/[id]/payment-instructions` for
-   the authorized instruction projection and
-   `POST /api/transactions/[id]/payment-claim` for `Sudah Bayar`. The claim
-   accepts an optional non-authoritative note only; no bank evidence or amount
-   assertion is accepted by this ticket.
-5. **Expiry execution:** Add a deterministic
-   `expireDuePaymentInstructions(now)` service and a thin local runner command
-   (`npm run job:payment-expiry`). Production invokes the same function through
-   the scheduler contract documented in the plan; no web request is required
-   for correctness. A lazy read guard may report stale state but cannot replace
-   the due-time sweep.
+1. **Invoice adapter:** Define a provider-neutral `PaymentInvoiceAdapter` under
+   `src/server/providers/payment-invoice.ts`, with the Midtrans implementation
+   under `src/server/providers/midtrans/` and a fake adapter for tests. The create request sends
+   Midtrans implementation and a fake adapter for tests. The create request sends
+   `payment_type: payment_link`, frozen total amount, transaction/order reference,
+   and the BayarAman deadline as provider `due_date` when supported. Provider
+   credentials are read server-side only. The adapter contract defines the
+   server-only base URL, timeout, request validation, response mapping, and
+   safe error categories (`TIMEOUT`, `UNAVAILABLE`, `INVALID_RESPONSE`,
+   `PROVIDER_REJECTED`); no raw provider response is returned to the client.
+   Configuration is server-only: `MIDTRANS_SERVER_KEY`,
+   `MIDTRANS_API_BASE_URL`, `MIDTRANS_ENVIRONMENT`, and
+   `MIDTRANS_REQUEST_TIMEOUT_MS`. Tests use a fake adapter and test secret.
+2. **Invoice idempotency:** Use `PAYMENT_INVOICE_CREATE` with the existing
+   `(actor_scope, command, key)` idempotency boundary and request hash. Add a
+   non-null `payment_invoices.idempotency_reference` with format
+   `PAYMENT_INVOICE_CREATE:<actorScope>:<key>`. A unique index maps one
+   invoice creation command to one immutable reference. The stored result
+   contains only safe invoice references/projection data. The database
+   `payment_invoices_one_active_idx` remains the final one-active-invoice guard.
+3. **Frozen terms/deadline:** Require `transaction_terms.frozen_at IS NOT NULL`,
+   both participants, `WAITING_COUNTERPARTY_DATA`, and the expected state version
+   before invoice creation. Set `issuedAt` and `deadlineAt = issuedAt + 24 hours`
+   once; retries, refreshes, provider calls, and status checks never recalculate it.
+4. **Provider response:** Persist provider invoice ID, hosted URL, provider status,
+   amount, issued/deadline timestamps, optional due date, and safe provider order
+   reference. Do not persist provider secrets or raw provider payloads in client,
+   audit, or idempotency results.
+5. **Payment authority boundary:** BAYAR-004 may display provider status and
+   launch the hosted page, but never marks payment authoritative or creates
+   `PAYMENT_CONFIRMED`. A later BAYAR-005 webhook/Get Status reconciliation may
+   win the state-version race before expiry.
+6. **Expiry:** Expiry reads `payment_invoices.deadline_at` and conditionally changes
+   only `WAITING_BUYER_PAYMENT` to `PAYMENT_EXPIRED`. The update must match
+   transaction ID, state, state version, active invoice, and deadline. Audit is
+   written only after the update succeeds. Reruns are no-ops.
+7. **Late funds:** A provider success received after expiry/cancellation does not
+   revive the transaction. BAYAR-004 records no refund or financial operation;
+   BAYAR-005/later Admin reconciliation owns the exception handoff.
+8. **Legacy route quarantine:** The old
+   `/api/transactions/[id]/payment-instructions` and
+   `/api/transactions/[id]/payment-claim` routes return `410 Gone` with a safe
+   migration message. They are not read or written by the new flow and are not
+   used by participant UI. Legacy tables remain compatibility-only.
 
 ## Planned Changes
 
 | Step | Change | File/module | Requirement/UX/UI/AC covered | Verification |
 | --- | --- | --- | --- | --- |
-| 1 | Add validated receiving-account configuration and masked projection helper | `src/server/payment/config.ts`, `src/server/payment/projection.ts`, `.env.example`, tests | UR-BUYER-004, UR-BR-034; UI-SCR-010; exact Buyer destination and masked participant boundary | Missing/invalid config fails closed; Buyer gets exact snapshot; Seller/log/audit never get raw value |
-| 2 | Extend payment instruction persistence with exact immutable snapshot and enforce one row per transaction | `src/server/db/schema.ts`, generated migration under `drizzle/` | UR-BR-008, UR-BR-030, UR-BR-031; TRD data model; instruction immutability | Migration applies; primary key and snapshot fields are present; generated schema has no unintended changes |
-| 3 | Implement payable transition and instruction issuance in the final role-data mutation | `src/server/transaction/payment.ts`, `src/server/transaction/service.ts`, `src/server/transaction/audit.ts` | UX-FLOW-013, UX-FLOW-044; `WAITING_COUNTERPARTY_DATA` -> `WAITING_BUYER_PAYMENT`; `PAYMENT_INSTRUCTIONS_ISSUED` | Atomic completion creates exactly one instruction, freezes snapshots, increments state version, and keeps original deadline on retry |
-| 4 | Add authorized payment-instruction read projection | `src/app/api/transactions/[id]/payment-instructions/route.ts`, shared transaction read/projection module | UR-BUYER-004, UR-PARTICIPANT-001; UX-FLOW-013; UI-SCR-009, UI-SCR-010 | Buyer sees exact amount, destination, fee, total, and WIB deadline; Seller sees only allowed masked data; unauthorized requests fail |
-| 5 | Implement one active Buyer claim with idempotent state transition and mandatory database enforcement | `src/server/transaction/payment.ts`, `src/server/db/schema.ts`, `src/app/api/transactions/[id]/payment-claim/route.ts`, generated migration | UR-BUYER-005, UR-BUYER-009; UX-FLOW-014, UX-FLOW-046; UI-SCR-010; `PAYMENT_CLAIM_SUBMITTED` | PostgreSQL partial unique index enforces `UNIQUE(transaction_id) WHERE active = true`; timely Buyer claim inserts immutable timestamp and transitions to `PAYMENT_UNDER_REVIEW`; duplicate returns same result; concurrent insert test passes; no confirmation is produced |
-| 6 | Implement deterministic expiry and local runner boundary | `src/server/jobs/payment-expiry.ts`, `src/server/jobs/run-payment-expiry.ts`, `package.json` | UR-SYSTEM-004 through UR-SYSTEM-007; UX-FLOW-045, UX-FLOW-048; QA-EXP-001, QA-EXP-002 | Due unpaid transaction is conditionally updated only when transaction ID, current state, state version, and deadline match; audit is written only after the update succeeds; timely claim is not expired; rerun creates no duplicate transition/audit; deadline is unchanged |
-| 7 | Extend transaction status UI for payment instructions and claim states; preserve cancellation as deferred only | `src/components/transactions/status.tsx`, `src/app/transactions/[id]/page.tsx`, `src/app/globals.css` | UI-SCR-009, UI-SCR-010; UI-SCR-021 deferred boundary only; QA-UI-002 | Mobile-width page renders payable, loading, disabled, error/retry, review, expired, and unauthorized states with keyboard/focus/label checks; any cancellation entry remains disabled/deferred and creates no cancellation request, route, state, or policy |
-| 8 | Add unit, database integration, route, and fixed-clock tests | `tests/unit/payment.test.ts`, `tests/integration/payment.test.ts` or repository-equivalent test setup | QA-PAY-001 to QA-PAY-003, QA-PAY-009, QA-EXP-001, QA-EXP-002, QA-UI-002; all ticket acceptance criteria | Test evidence covers authorization, concurrent active-claim inserts, idempotency, deadline boundaries, masking, accessibility/responsive states, and explicit partial/excess/duplicate/late external-fund non-confirmation |
+| 1 | Add provider-neutral invoice adapter, Midtrans request/response mapper, server-only config, and fake adapter. | `src/server/providers/payment-invoice.ts`, `src/server/providers/midtrans/invoice.ts`, `src/server/providers/midtrans/config.ts`, `src/server/providers/midtrans/fake.ts` | PB-MP-001/002; UR-SYSTEM-004, UR-BUYER-004; QA-MP-001/002 | Request contains `payment_type: payment_link`; provider secret absent from client/log/audit; fake responses map safe fields only; timeout and provider errors map to defined categories |
+| 2 | Add invoice creation service with frozen-term validation, one-active-invoice check, idempotency, request hash, and immutable deadline/result projection. | `src/server/payment/invoice.ts`, `src/server/payment/projection.ts`, `src/server/transaction/service.ts` or payment handoff module | UX-FLOW-013/044; UR-BR-008/009/030/031; AC-1/2 | Complete frozen transaction creates one invoice; incomplete/unfrozen/stale state rejects; duplicate returns same result and deadline |
+| 3 | Add the invoice idempotency reference and concrete immutable-field database enforcement. | `src/server/db/schema.ts`, `drizzle/0006_bayar004_invoice_integrity.sql` | TRD Sections 6/7/10; UR-PAYMENT-001/002; active invoice and immutable amount/deadline contract | Migration preflight/backfill, unique idempotency-reference index, `payment_invoices_one_active_idx`, named trigger rejects immutable update/delete, provider status/lifecycle fields remain mutable, concurrent creation test |
+| 4 | Add concrete participant-authorized invoice/link/status routes. Both Buyer and Seller may invoke the idempotent ensure command; the server performs the system-side mutation after readiness. | `src/app/api/transactions/[id]/payment-link/route.ts`, `src/app/api/transactions/[id]/payment-status/route.ts`, existing transaction read projection | TRD route contract; UR-BUYER-004/005, UR-PARTICIPANT-001; UX-FLOW-013/014; UI-SCR-009/010; AC-3 | Session-derived Buyer/Seller participant authorization, frozen/state/version/idempotency checks, unrelated/unauthenticated/Admin denial, refresh does not reset deadline, no paid transition, safe provider error |
+| 5 | Replace the legacy payment-instruction expiry boundary with invoice expiry. | `src/server/jobs/payment-expiry.ts`, `src/server/jobs/run-payment-expiry.ts`, `package.json` | UR-SYSTEM-004..007; UX-FLOW-045/048; QA-EXP-001/002; AC-4 | Fixed-clock before/at/after deadline, atomic state/version update, active invoice predicate, no duplicate audit, no revival |
+| 6 | Remove legacy manual payment controls from the participant UI and quarantine the legacy routes with `410 Gone`; do not implement BAYAR-005 behavior. | `src/components/transactions/status.tsx`, `src/app/api/transactions/[id]/payment-instructions/route.ts`, `src/app/api/transactions/[id]/payment-claim/route.ts` | UI-SCR-009/010/021; QA-UI-002; AC-3/5 | No manual bank instruction or `Sudah Bayar` in participant UI; legacy routes cannot create claims/instructions; UI-SCR-021 remains deferred/disabled |
+| 7 | Add focused unit, adapter, route, PostgreSQL, fixed-clock, and UI-state tests. | `tests/unit/payment.test.ts`, `tests/integration/payment.test.ts`, repository-equivalent files | QA-MP-001..004, QA-PAY-001..003, QA-EXP-001/002, QA-UI-002; all AC | Frozen amount/deadline, duplicate/concurrent invoice, authorization, provider outage, refresh, expiry race, late-fund non-revival, masking, and UI states |
+| 8 | Record execution evidence and scope validation. | `docs/execution/BAYAR-004/04-validation.md` | Ticket Definition of Done | Typecheck, lint, build, tests, migration, PostgreSQL health, diff check, and no BAYAR-005 behavior |
 
 ### Dependency Order
 
-1. Configuration/projection and schema migration.
-2. Payment issuance service integrated with final BAYAR-003 role-data mutation.
-3. Read and claim routes.
-4. Expiry service and local runner.
-5. UI states and route tests.
-6. Full validation against local PostgreSQL.
+1. Confirm current invoice schema/config and adapter contract.
+2. Implement `src/server/providers/payment-invoice.ts`, the Midtrans provider
+   module, fake adapter, and safe projection.
+3. Implement idempotent invoice service and mandatory immutable-field migration `0006`.
+4. Add participant-authorized `/payment-link` and status routes with the
+   server-side system mutation boundary.
+5. Replace expiry job with `payment_invoices` deadline logic.
+6. Update participant UI states and remove primary manual-payment controls.
+7. Run PostgreSQL integration/fixed-clock/UI-state validation.
 
-The migration must be applied before integration tests. The implementation
-must preserve compatibility with existing BAYAR-003 transactions that are not
-yet payable; only transactions with both complete role datasets may enter the
-new transition.
+No real production Midtrans credential or webhook deployment is required for
+this ticket. Local tests use the fake adapter and PostgreSQL in OrbStack.
 
 ## State And Data Impact
 
-```text
+~~~text
 State transitions added/changed:
-- WAITING_COUNTERPARTY_DATA -> WAITING_BUYER_PAYMENT when both role datasets
-  are complete and one payment instruction snapshot is created.
-- WAITING_BUYER_PAYMENT -> PAYMENT_UNDER_REVIEW on one timely Buyer claim.
-- WAITING_BUYER_PAYMENT -> PAYMENT_EXPIRED when the original deadline has
-  passed without a timely claim.
-- No transition to PAYMENT_CONFIRMED is implemented.
+- WAITING_COUNTERPARTY_DATA -> WAITING_BUYER_PAYMENT only after both role
+  datasets are complete, terms are frozen, and one invoice is persisted.
+- WAITING_BUYER_PAYMENT -> PAYMENT_EXPIRED only after the absolute invoice
+  deadline and a successful atomic conditional update.
+- No transition to PAYMENT_CONFIRMED is implemented here.
+- A later provider-authoritative transition from BAYAR-005 wins through the
+  same state/version guard and causes expiry to no-op.
 
 Schema/migration impact:
-- Add exact receiving-account snapshot storage to payment_instructions, with
-  restricted server-side projection and existing transaction primary key.
-- Add a mandatory PostgreSQL partial unique index on
-  `payment_claims(transaction_id) WHERE active = true`. Service, state-version,
-  and idempotency guards remain authoritative for user-safe results, while the
-  database constraint protects concurrent inserts.
-- Preserve existing payment_claims and payment_instructions rows.
+- Reuse payment_invoices, payment_provider_events, and
+  payment_reconciliations schema boundaries.
+- Preserve the existing one-active-invoice partial unique index.
+- Add `payment_invoices.idempotency_reference` as a non-null field for new and
+  existing rows, using deterministic
+  `PAYMENT_INVOICE_CREATE:LEGACY:<invoiceId>` backfill before setting NOT NULL,
+  and a unique index on the field.
+- Add `0006_bayar004_invoice_integrity.sql` with named function
+  `bayaraman_payment_invoice_immutable_fields()` and trigger
+  `payment_invoices_immutable_fields` that rejects UPDATE/DELETE changes to
+  transaction/provider/order/invoice/link, amount/currency, issued/deadline/
+  due-date, and idempotency-reference fields. The trigger rejects DELETE for
+  issued rows. Provider status, `is_active`, and `retired_at` remain mutable
+  for later lifecycle/reconciliation owners. Migration preflight reports null
+  or duplicate references before backfill; recovery resolves reported rows
+  and reruns the unchanged migration.
+- No new transaction state, product role, or financial result.
 
 Authorization impact:
-- Buyer participant may read exact payment instructions and submit a claim.
-- Seller participant may read only the permitted masked destination/status.
-- Admin access remains server-side and does not gain bank-review behavior here.
-- Unauthenticated, unrelated, or wrong-role requests are rejected.
+- Authenticated Buyer or Seller participants may invoke the `/payment-link`
+  ensure command and read the hosted link/status projection. The server
+  performs the mutation; this is not a new product/system role.
+- Server resolves account and transaction ownership; client account IDs are
+  ignored.
+- The command requires both participants, frozen terms, exact
+  `WAITING_COUNTERPARTY_DATA`, expected state version, and `Idempotency-Key`.
+- Admin does not receive payment-confirmation authority in BAYAR-004.
 
 Audit/notification impact:
-- Append PAYMENT_INSTRUCTIONS_ISSUED, PAYMENT_CLAIM_SUBMITTED, and
-  PAYMENT_EXPIRED with transaction ID, actor, state, version, and safe metadata.
-- Never include raw receiving account, OTP, bank evidence, or claim secret in
-  audit/log/idempotency payloads.
-- No external notification integration is created in this ticket.
+- Record safe invoice-issued and payment-expired events with transaction,
+  version, invoice reference, amount/deadline, and correlation metadata.
+- Never record provider secret, raw provider payload, raw credentials, or
+  sensitive account data.
+- No webhook notification, payment confirmation, refund, payout, or WhatsApp
+  notification is created here.
 
 Manual operation impact:
-- Buyer still transfers funds manually to the displayed BayarAman account.
-- Sudah Bayar only informs Admin that a claim needs review; it is not evidence
-  and does not authorize WhatsApp, fulfillment, or payout.
-```
+- Buyer opens the Midtrans hosted payment page.
+- `Cek status pembayaran` only refreshes status; it is not a payment claim.
+- Admin reconciliation, authoritative payment decision, and late-fund refund
+  are handed off to BAYAR-005/later financial tickets.
+~~~
 
 ## API And Job Contract
 
-```text
+~~~text
+POST /api/transactions/[id]/payment-link
+- Authenticated Buyer/Seller participant request to ensure the invoice exists;
+  the server executes the system-side domain mutation.
+- Requires frozen terms, both role datasets, WAITING_COUNTERPARTY_DATA, and
+  expected state version.
+- Uses Idempotency-Key and returns the same safe invoice result on duplicate.
+- Creates no payment authority; provider failure leaves transaction state intact.
+
 GET /api/transactions/[id]/payment-instructions
-- Authenticated participant only.
-- Buyer receives exact destination; Seller receives masked destination.
-- Response includes amount breakdown, deadlineAt, rendered WIB deadline,
-  current state, state version, and claim/review status.
-- No raw account value in unauthorized or generic projections.
-
 POST /api/transactions/[id]/payment-claim
-- Authenticated Buyer participant only.
-- Requires Idempotency-Key and expectedStateVersion.
-- Accepts optional non-authoritative note; ignores no client-supplied amount or
-  confirmation fields.
-- Requires current state WAITING_BUYER_PAYMENT and now < deadlineAt.
-- Returns PAYMENT_UNDER_REVIEW and the immutable claim timestamp.
+- Return `410 Gone` with a safe migration message.
+- Do not read/write legacy manual-payment tables or create a claim/state change.
 
-expireDuePaymentInstructions(now)
-- Selects only WAITING_BUYER_PAYMENT rows with deadlineAt <= now.
-- Uses an internal job correlation key derived from the run timestamp and
-  transaction ID for logs/audit context only; it is not a product role, account,
-  or new transaction state.
-- For each candidate, atomically updates the row only when transaction ID,
-  current state `WAITING_BUYER_PAYMENT`, current state version, and
-  `deadlineAt <= now` all match. The returned updated row is the sole authority
-  for whether the transition won.
-- Writes `PAYMENT_EXPIRED` audit only after that conditional update succeeds.
-- Does not touch PAYMENT_UNDER_REVIEW, does not reset deadlines, and does not
-  infer bank status. Rerunning the same or another job run finds no eligible
-  row after the first successful update and creates no duplicate audit event.
-- Local runner: npm run job:payment-expiry.
-- Production scheduler: invokes the same bounded function on a recurring
-  schedule with a service-level database credential; scheduling infrastructure
-  is outside this ticket.
-```
+GET /api/transactions/[id]/payment-status
+- Authenticated participant projection of invoice ID/reference, hosted URL,
+  provider status, frozen amount, issuedAt, deadlineAt, deadlineWib, and the
+  next allowed action.
+- Refresh never changes amount/deadline and never marks payment paid.
+
+expirePaymentInvoices(now)
+- Selects active invoices whose transaction is WAITING_BUYER_PAYMENT and whose
+  absolute deadlineAt is <= now.
+- Conditionally updates transaction ID, exact state, state version, active
+  invoice, and deadline predicate in one database mutation.
+- Writes PAYMENT_EXPIRED only after the update returns a row.
+- Uses SYSTEM:payment-expiry idempotency/correlation scope where a persisted
+  command record is needed; no system account or product role is introduced.
+- Local runner remains `npm run job:payment-expiry`; production scheduler is
+  an external deployment concern.
+~~~
 
 ## Test Plan
 
 | Layer | Case | Expected evidence |
 | --- | --- | --- |
 | Static/type/lint | Typecheck, lint, build, diff check | No type, lint, build, or whitespace errors |
-| Unit | Service fee/total and exact integer snapshot reuse | Instruction amount equals frozen terms; no recalculation on retry |
-| Unit | Receiving-account config and masking | Missing config fails closed; Buyer exact value; Seller masked value |
-| Unit | Deadline calculation and WIB formatting with fixed clock | Exactly 24 hours from issuance; displayed timezone is WIB; no reset |
-| Unit | Claim eligibility and state guards | Only Buyer, timely `WAITING_BUYER_PAYMENT`, expected version accepted |
-| Unit | Expiry boundary | Before deadline remains waiting; at/after deadline expires; review state remains untouched |
-| Integration | Final role-data completion | One atomic instruction, frozen snapshots, state transition, and audit event |
-| Integration | Duplicate instruction issuance | Same result/instruction/deadline; no duplicate row or version drift |
-| Integration | Duplicate and concurrent claim | PostgreSQL partial unique index prevents a second active row; one state transition; duplicate returns original result; conflict audited |
-| Integration | Claim versus expiry race | Exactly one valid winner based on atomic state/deadline guard; no partial mutation |
-| Integration | External fund observations | Simulated partial, excess, duplicate, and late funds do not create evidence, confirmation, deadline reset, fulfillment authorization, or a new state; Admin adjudication remains BAYAR-005 |
-| Route | Participant and role authorization | Buyer exact read/claim; Seller masked read; unrelated/unauthenticated requests rejected |
-| Route | Failed request/retry | Validation, stale version, expired, and network retry preserve state and support same idempotency key |
-| Job | Rerun expiry runner | Already expired and under-review rows are unchanged; no duplicate audit transition |
-| UI/manual | UI-SCR-009/010 states | Loading, disabled, error, retry, payable, payment-under-review, expired, unauthorized, keyboard focus, labels, and responsive states render in mobile-width surface; cancellation remains deferred/disabled only |
-| Scope guard | Confirmation and review absence | No `PAYMENT_CONFIRMED`, bank review, refund, payout, group, or new state is produced |
+| Unit | Adapter request and response mapping | `payment_type: payment_link`, frozen amount, due date, safe result, provider error mapping |
+| Unit | Invoice config/secret boundary | Missing secret fails closed outside test; secret never appears in response/log/audit |
+| Unit | Invoice idempotency/deadline | Duplicate request returns same invoice reference, amount, URL, and deadline; no reset |
+| Unit | Status projection | Pending/capture/deny/cancel/failure/expire remain non-authoritative; refresh is read-only |
+| PostgreSQL integration | Active invoice uniqueness and immutability | Concurrent invoice creation produces one active invoice; idempotency reference is stored; trigger rejects immutable field update/delete while lifecycle/status fields remain mutable |
+| PostgreSQL integration | Frozen readiness/state guard | Incomplete, unfrozen, stale, or wrong-state transaction cannot issue invoice |
+| PostgreSQL integration | Invoice/expiry race | Exactly one state-version winner; provider-authoritative downstream winner prevents expiry |
+| Job/fixed clock | Before, at, and after deadline | Only at/after deadline expires; rerun is idempotent; no duplicate audit |
+| Route | Buyer/Seller authorization and refresh | Allowed participant projection; unrelated/unauthenticated denial; no paid transition |
+| Route/recovery | Provider outage, timeout, malformed response, retry | State remains safe; same idempotency key can retry; deadline unchanged |
+| Late-fund fixture | Success after expiry/cancellation | No revival, no fulfillment/payout; handoff reference only for BAYAR-005 |
+| UI/manual | UI-SCR-009/010/021 | Loading, disabled, hosted-link, pending, error, expired, unauthorized, UNKNOWN/deferred states render in mobile-width surface |
+| Scope guard | Legacy payment behavior | No `Sudah Bayar`, payment claim, manual bank instruction, `PAYMENT_CONFIRMED`, refund, payout, webhook, or new state; legacy routes return `410 Gone` |
 
 ## Risks And Safeguards
 
 | Risk | Safeguard | Recovery/rollback |
 | --- | --- | --- |
-| Receiving-account configuration missing or changed | Validate at startup/issuance; snapshot exact values per transaction; never read mutable config for an existing instruction | Fix config and retry idempotent issuance only if no instruction exists; existing snapshot remains authoritative |
-| Instructions issued twice | Transaction primary key, state guard, idempotency, and state-version update in one transaction | Retry same command; return existing instruction/result |
-| Claim races with expiry | Both commands use atomic state/version/deadline predicates | Reload current state; retry only when still eligible; never create a second claim |
-| Claim incorrectly treated as payment confirmation | Separate claim table/event and explicit `PAYMENT_UNDER_REVIEW` state | BAYAR-005 performs bank review; no automatic fulfillment/payout path exists here |
-| Raw account leaks through logs or generic reads | Dedicated projection, safe audit payload, no raw value in idempotency result or validation report; `.env.example` contains placeholders only and real local values remain in ignored `.env` | Rotate local fixture/config if accidentally exposed; inspect and remove only non-authoritative local logs |
-| Scheduler unavailable | Deterministic service, rerunnable job key, and operational monitoring contract | Re-run the job; optional lazy read may surface stale state but cannot create a second transition |
-| Existing BAYAR-003 transactions have incomplete data | Require both participant snapshots and preserve current state | Continue collecting role data; do not create payment instructions prematurely |
+| Duplicate invoice or provider retry | Idempotency result, request hash, active-invoice partial index, transaction/state lock | Return original result; never reset deadline or create second active invoice |
+| Midtrans provider outage/unknown response | Provider-neutral adapter and non-authoritative status projection | Retry same command; leave transaction waiting; BAYAR-005 reconciles ambiguity |
+| Provider due date differs from BayarAman deadline | Persist absolute BayarAman deadline as authority; pass due date only when supported | Never recalculate on refresh/retry; late event follows exception handoff |
+| Invoice fields drift after issuance | Service guards plus mandatory `0006` PostgreSQL immutability trigger | Reject mutation; use a new approved correction workflow, not overwrite |
+| Expiry races provider authority | Atomic state/version/deadline update | The first valid state transition wins; later job/event is idempotent and cannot revive |
+| Legacy manual route is used accidentally | Participant UI removes controls and both legacy routes return `410 Gone` | Preserve tables for compatibility; do not use receiving-bank config as primary payment |
+| Secret leaks to client/logs | Server-only adapter/config and safe DTO allowlist | Rotate secret/config and invalidate exposed local fixtures; never include raw payload in audit |
+| Incomplete BAYAR-003 data | Require frozen terms, both participants, and all role-owned snapshots | Keep `WAITING_COUNTERPARTY_DATA`; no invoice/deadline is created |
 
 ## Plan Completion Check
 
 - [x] Every BAYAR-004 acceptance criterion maps to a planned change and verification.
-- [x] Every relevant UX transition and UI state maps to a planned change and verification.
-- [x] Dependencies and migration order are explicit.
-- [x] Receiving-account source, API routes, and expiry mechanism are concrete.
-- [x] One active claim is enforced by a mandatory PostgreSQL partial unique index and concurrent test.
-- [x] Expiry uses atomic transaction predicates and writes audit only after a successful update; no system actor is introduced.
-- [x] Partial, excess, duplicate, and late funds have explicit non-authoritative tests and remain BAYAR-005 review inputs.
-- [x] UI-SCR-021 is limited to a deferred/disabled boundary with no cancellation implementation.
-- [x] Local receiving-account placeholders, missing-config validation, and raw-value safety checks are defined.
-- [x] Failure, retry, idempotency, concurrency, and recovery behavior are covered.
-- [x] Bank review, confirmation, refund, payout, and later tickets are excluded.
-- [x] No new product role, transaction state, or financial result is introduced.
-- [x] No unresolved product decision blocks implementation planning.
+- [x] Midtrans Invoice API and `payment_type: payment_link` are concrete.
+- [x] Public creation route is the TRD contract: `POST /api/transactions/[id]/payment-link`.
+- [x] Adapter boundary follows TRD under `src/server/providers/midtrans/` with a separate generic interface and fake adapter.
+- [x] Hosted checkout, status refresh, frozen amount, and absolute 1x24 deadline are concrete.
+- [x] One active invoice and duplicate/concurrent creation behavior are covered.
+- [x] `payment_invoices.idempotency_reference` has a concrete persistence and migration contract.
+- [x] Idempotency reference format and unique mapping to `PAYMENT_INVOICE_CREATE` are explicit.
+- [x] Invoice immutable fields have mandatory PostgreSQL trigger enforcement and update/delete tests.
+- [x] Migration preflight/backfill, trigger names, mutable lifecycle fields, and recovery instructions are explicit.
+- [x] Legacy manual payment routes have explicit `410 Gone` quarantine behavior and regression tests.
+- [x] Adapter timeout, response validation, error categories, and fake-provider behavior are concrete.
+- [x] `/payment-link` actor permissions and server-side system mutation boundary are explicit.
+- [x] Webhook authority, payment confirmation, Admin reconciliation, and money movement remain BAYAR-005/out of scope.
+- [x] Expiry uses invoice deadline, state/version predicates, audit-after-update, and rerun-safe behavior.
+- [x] Late payment cannot revive a closed transaction and is handed off without refund implementation here.
+- [x] No manual bank instruction or `Sudah Bayar` primary flow remains in the planned UI.
+- [x] UI-SCR-021 is only a deferred/disabled boundary.
+- [x] Provider secrets and raw provider data are server-only and sanitized.
+- [x] No product role, transaction state, or financial result is added.
+- [x] Failure, retry, provider outage, authorization, concurrency, and recovery behavior are covered.
+- [x] Local PostgreSQL/OrbStack is validation-only and production remains PostgreSQL-compatible.
+- [ ] Plan Review approval is required before implementation.
 
 ## Traceability Summary
 
-```text
+~~~text
 Requirements: UR-BUYER-004, UR-BUYER-005, UR-BUYER-009,
 UR-SYSTEM-004..UR-SYSTEM-007, UR-PARTICIPANT-001,
-UR-BR-008, UR-BR-009, UR-BR-010, UR-BR-030, UR-BR-031, UR-BR-034
+UR-BR-008..UR-BR-010, UR-BR-030, UR-BR-031, UR-BR-033..UR-BR-035
 
 UX: UX-FLOW-013, UX-FLOW-014, UX-FLOW-044, UX-FLOW-045,
 UX-FLOW-046, UX-FLOW-048
 
 UI: UI-SCR-009, UI-SCR-010, UI-SCR-021
 
-QA: QA-PAY-001, QA-PAY-002, QA-PAY-003, QA-PAY-009,
+QA: QA-MP-001..QA-MP-004, QA-PAY-001..QA-PAY-003,
 QA-EXP-001, QA-EXP-002, QA-UI-002
 
-TRD: Sections 6, 7, 8, 9, 12, 13, and 16
-```
+Product decisions: PB-MP-001..PB-MP-006,
+PB-MP-OD-001..PB-MP-OD-005
+
+TRD: Sections 5, 6, 7, 8, 10, 11, 13, and 14
+~~~
 
 ## Status
 
-```text
-Implementation plan: Draft
+~~~text
+Version: 0.1
+Status: Draft
 Ready for Plan Review: Yes
-```
+~~~

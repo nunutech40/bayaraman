@@ -150,6 +150,19 @@ button:disabled {
   margin-top: 1.5rem;
 }
 
+.payment-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.payment-actions {
+  display: grid;
+  gap: 0.75rem;
+}
+
 .section-label {
   margin: 0.5rem 0 0;
   color: var(--ink);

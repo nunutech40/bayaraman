@@ -14,18 +14,19 @@ type TransactionData = {
   terms: { itemPrice: number; shippingCost: number; serviceFee: number; totalAmount: number } | null;
 };
 type PaymentData = {
-  state: string;
-  stateVersion: number;
+  invoiceId: string;
+  provider: string;
+  providerInvoiceId: string | null;
+  hostedPaymentUrl: string | null;
+  providerStatus: string | null;
   amount: number;
-  destinationBank: string;
-  destinationAccount: string;
+  currency: string;
+  issuedAt: string;
+  deadlineAt: string;
   deadlineWib: string;
-  claim: { id: string; submittedAt: string } | null;
+  state: "WAITING_BUYER_PAYMENT";
+  stateVersion: number;
 };
-
-function rupiah(value: number) {
-  return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value);
-}
 
 export function TransactionStatus({ transactionId }: { transactionId: string }) {
   const [data, setData] = useState<TransactionData | null>(null);
@@ -43,14 +44,47 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
     }
     const result = await response.json() as TransactionData;
     setData(result);
-    if (result.currentRole) setRole(result.currentRole);
-    if (["WAITING_BUYER_PAYMENT", "PAYMENT_UNDER_REVIEW", "PAYMENT_EXPIRED"].includes(result.state)) {
-      const paymentResponse = await fetch(`/api/transactions/${transactionId}/payment-instructions`);
-      if (paymentResponse.ok) setPayment(await paymentResponse.json() as PaymentData);
+    if (result.state === "WAITING_BUYER_PAYMENT") {
+      const paymentResponse = await fetch(`/api/transactions/${transactionId}/payment-status`);
+      setPayment(paymentResponse.ok ? await paymentResponse.json() as PaymentData : null);
+    } else {
+      setPayment(null);
     }
+    if (result.currentRole) setRole(result.currentRole);
   }, [transactionId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  async function createPaymentLink() {
+    if (!data) return;
+    setBusy(true);
+    setMessage("");
+    const response = await fetch(`/api/transactions/${transactionId}/payment-link`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ expectedStateVersion: data.stateVersion })
+    });
+    const result = await response.json() as PaymentData & { message?: string };
+    setBusy(false);
+    if (!response.ok) {
+      setMessage(result.message ?? "Payment link belum tersedia. Coba lagi.");
+      return;
+    }
+    setPayment(result);
+    await load();
+  }
+
+  async function refreshPaymentStatus() {
+    setBusy(true);
+    setMessage("");
+    const response = await fetch(`/api/transactions/${transactionId}/payment-status`, { cache: "no-store" });
+    setBusy(false);
+    if (!response.ok) {
+      setMessage("Status pembayaran belum tersedia. Coba lagi.");
+      return;
+    }
+    setPayment(await response.json() as PaymentData);
+  }
 
   const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -70,25 +104,6 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
     setBusy(false);
     if (!response.ok) {
       setMessage(result.message ?? "Data belum tersimpan");
-      return;
-    }
-    await load();
-  }
-
-  async function submitClaim() {
-    if (!data || !payment) return;
-    setBusy(true);
-    setMessage("");
-    const response = await fetch(`/api/transactions/${transactionId}/payment-claim`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
-      body: JSON.stringify({ expectedStateVersion: payment.stateVersion })
-    });
-    const result = await response.json() as { message?: string };
-    setBusy(false);
-    if (!response.ok) {
-      setMessage(result.message ?? "Klaim belum dapat dikirim");
-      await load();
       return;
     }
     await load();
@@ -125,23 +140,28 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
               </div>
             )}
 
-            {payment && <section className="payment-panel" aria-labelledby="payment-title">
-              <p className="section-label">Payment instructions</p>
-              <h2 id="payment-title">Transfer manual ke rekening BayarAman</h2>
-              <dl className="payment-summary">
-                <div><dt>Total pembayaran</dt><dd>{rupiah(payment.amount)}</dd></div>
-                <div><dt>Bank</dt><dd>{payment.destinationBank}</dd></div>
-                <div><dt>Nomor rekening</dt><dd>{payment.destinationAccount}</dd></div>
-                <div><dt>Batas pembayaran</dt><dd>{payment.deadlineWib}</dd></div>
-              </dl>
-              {data.currentRole === "BUYER" && data.state === "WAITING_BUYER_PAYMENT" && !payment.claim && <button type="button" onClick={submitClaim} disabled={busy}>{busy ? "Mengirim..." : "Sudah Bayar"}</button>}
-              {payment.claim && <p className="success-message">Klaim sudah dikirim. Admin sedang memeriksa pembayaran.</p>}
-              {data.state === "PAYMENT_EXPIRED" && <p className="form-error">Batas pembayaran sudah berakhir.</p>}
-              <p className="muted payment-help">Klik Sudah Bayar hanya mengirim klaim untuk diperiksa. Status pembayaran belum dikonfirmasi oleh sistem.</p>
-              <button className="secondary-button" type="button" disabled aria-disabled="true">Pembatalan tersedia pada tahap berikutnya</button>
-            </section>}
-
-            {data.readyForPaymentInstructions && !payment && <p className="success-message">Data lengkap. Payment instructions sedang disiapkan.</p>}
+            {data.readyForPaymentInstructions && data.state === "WAITING_COUNTERPARTY_DATA" && (
+              <div className="payment-panel" aria-labelledby="payment-title">
+                <p className="section-label" id="payment-title">Invoice pembayaran</p>
+                <p className="muted">Data transaksi sudah dibekukan. Buat payment link Midtrans untuk membuka halaman pembayaran hosted.</p>
+                <button type="button" onClick={createPaymentLink} disabled={busy}>
+                  {busy ? "Menyiapkan invoice..." : "Buat payment link"}
+                </button>
+              </div>
+            )}
+            {data.state === "WAITING_BUYER_PAYMENT" && payment && (
+              <div className="payment-panel" aria-labelledby="payment-status-title">
+                <p className="section-label" id="payment-status-title">Pembayaran Midtrans</p>
+                <p className="status-line">Status provider: <strong>{payment.providerStatus ?? "PENDING"}</strong></p>
+                <p className="muted">Total: {new Intl.NumberFormat("id-ID", { style: "currency", currency: payment.currency }).format(payment.amount)}</p>
+                <p className="muted">Batas pembayaran: {payment.deadlineWib}</p>
+                <div className="payment-actions">
+                  {payment.hostedPaymentUrl && <a className="button-link" href={payment.hostedPaymentUrl} target="_blank" rel="noreferrer">Buka halaman pembayaran</a>}
+                  <button type="button" className="secondary-button" onClick={refreshPaymentStatus} disabled={busy}>{busy ? "Memuat..." : "Cek status pembayaran"}</button>
+                </div>
+                <p className="muted">Status pembayaran menjadi authoritative setelah rekonsiliasi Midtrans pada tahap berikutnya.</p>
+              </div>
+            )}
             {message && <p className="form-error" role="alert">{message}</p>}
           </>
         )}

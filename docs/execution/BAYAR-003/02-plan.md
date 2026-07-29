@@ -3,240 +3,233 @@
 ## Task
 
 ~~~text
-Ticket ID/title: BAYAR-003 — Transaction Creation, Role-Owned Data, and Counterparty Join
+Ticket ID/title: BAYAR-003 — Transaction Creation, Role-Owned Data, and Invitation Join
 Outcome: Let a verified account create a seller-created or buyer-created
 physical-goods transaction, invite the opposite role, bind a distinct
 verified account, and complete only its own role-owned data.
 Source research: docs/execution/BAYAR-003/01-research.md
 Source requirements and QA scenarios: UR-INIT-001..005,
 UR-BUYER-001..003, UR-SELLER-001..003, UR-PARTICIPANT-001..003,
-UR-SYSTEM-001, UR-BR-001, UR-BR-005..007;
-QA-TRANS-001..006, QA-SEC-001, QA-UI-001
+UR-SYSTEM-001, UR-BR-001, UR-BR-005..007, UR-BR-027..030,
+UR-BR-032, UR-BR-037; QA-TRANS-001..006, QA-SEC-001, QA-UI-001
 Source UX Flow and UI IDs/states: UX-FLOW-002..006, UX-FLOW-009..012;
 UI-SCR-002..009
-~~
+~~~
+
+Status: Draft
 
 ## Scope
 
 ### In Scope
 
 - Seller-created and buyer-created physical-goods transaction creation.
-- Buyer/Seller participant binding with exactly two distinct accounts.
-- Role-owned Buyer and Seller data collection and immutable transaction
-  snapshots.
-- Hashed, single-use, expiring invitation creation, join, revoke, and
-  reissue.
-- Transaction reads with participant ownership and sensitive-data masking.
-- Approved pre-payment states: `WAITING_COUNTERPARTY` and
-  `WAITING_COUNTERPARTY_DATA`.
-- Derived readiness for BAYAR-004 without creating payment instructions or
-  starting the payment deadline.
+- Buyer/Seller participant binding with exactly two distinct verified accounts.
+- Role-owned Buyer and Seller data, snapshots, masking, and freeze boundary.
+- Hashed, single-use, expiring invitation preview, join, revoke, and reissue.
+- Authorized transaction reads and safe raw/masked destination projections.
+- Only `WAITING_COUNTERPARTY` and `WAITING_COUNTERPARTY_DATA`.
 - Idempotency, state-version checks, append-only audit, and recovery paths.
-- UI-SCR-002 through UI-SCR-009 in the existing constrained mobile-width
-  desktop surface.
+- UI-SCR-002 through UI-SCR-009 in the existing constrained mobile-width shell.
 
 ### Out Of Scope
 
 - Creating or changing `payment_instructions`.
-- `WAITING_BUYER_PAYMENT`, payment claim, `Sudah Bayar`, payment review,
-  bank review, WhatsApp group, payout, refund, complaint, cancellation, or
-  risk hold behavior.
-- Payment deadline creation or expiry processing. BAYAR-004 owns the
-  instruction and timer handoff.
-- WhatsApp provider integration or automatic invitation delivery.
-- Permanent Buyer/Seller account roles, Admin as a participant, or anonymous
-  participation.
-- Wallet, balance ledger, marketplace, or unrelated refactoring.
+- Midtrans invoice/payment link, payment deadline, webhook, payment review,
+  `Sudah Bayar`, bank review, or any payment claim.
+- WhatsApp group/checkpoint, payout, refund, complaint, cancellation, risk hold,
+  wallet, balance ledger, or financial operation.
+- Permanent Buyer/Seller account roles, Admin as participant, anonymous access,
+  or unrelated refactoring.
 
 ## Planned Changes
 
 | Step | Change | File/module | Requirement/UX/UI/AC covered | Verification |
 | --- | --- | --- | --- | --- |
-| 1 | Add transaction-specific schema for item, shipping, and role-owned financial snapshots | `src/server/db/schema.ts`, `drizzle/*` | UR-SELLER-001..003, UR-BUYER-002..003, UR-PARTICIPANT-003; TRD data model; AC-1/2 | Migration inspection, foreign keys, unique transaction/participant constraints, owner/masked projection tests |
-| 2 | Add transaction command schemas and approved calculation helpers | `src/server/transaction/schema.ts`, `src/server/transaction/calculation.ts` | UR-SYSTEM-001, UR-BR-005..007, UI-SCR-003/004/007/008; AC-1/2 | Zod field validation, physical-goods scope, Rp100,000-Rp5,000,000 item price, 2% fee min Rp10,000/max Rp50,000, total calculation |
-| 3 | Implement server-authoritative transaction creation | `src/server/transaction/service.ts`, `src/server/domain/transaction/*` | UR-INIT-001/003, UR-SELLER-001, UR-BUYER-003, UR-BR-001; UX-FLOW-002/007; UI-SCR-002..004; AC-1 | Verified-account guard, Buyer/Seller creator validation, initial `WAITING_COUNTERPARTY`, atomic participant/terms/item/snapshot creation |
-| 4 | Implement invitation token lifecycle | `src/server/transaction/invitation.ts` | UR-INIT-002/004/005; UX-FLOW-004/009; UI-SCR-005; AC-1/2 | Random token hash, raw token returned once, 3x24h expiry, revoke/reissue, no raw token logs, duplicate idempotency |
-| 5 | Implement opposite-role invitation join | `src/server/transaction/join.ts` | UR-BUYER-001/002, UR-SELLER-002/003, UR-PARTICIPANT-001/002; UX-FLOW-005/006/010; UI-SCR-006..008; AC-2/3 | Distinct verified account, opposite role, same-account rejection, single-use atomic consume, `WAITING_COUNTERPARTY` -> `WAITING_COUNTERPARTY_DATA` |
-| 6 | Implement role-data completion and snapshot locking boundary | `src/server/transaction/role-data.ts` | UR-BUYER-002/003, UR-SELLER-002/003, UR-PARTICIPANT-003; UX-FLOW-006/011/012; UI-SCR-007..009; AC-2/4 | Buyer address, Buyer/Seller ownership, verified WhatsApp snapshot, destination persistence, no cross-role mutation, derived payment-readiness without state/timer change |
-| 7 | Implement authorized transaction reads and raw/masked projections | `src/server/transaction/read.ts`, `src/server/transaction/projections.ts`, `src/server/auth/authorization.ts` | UR-PARTICIPANT-001..003, UR-BR-001; UI-SCR-005/009; QA-SEC-001 | Participant/admin access checks, own raw destination only, other participant masked summary, Buyer address visibility, unauthorized/not-found behavior |
-| 8 | Add idempotency, state-version, and audit persistence for transaction mutations | `src/server/transaction/mutation.ts`, `src/server/idempotency/*`, `src/server/audit/*` | UR-SYSTEM-001; QA-SEC-001, QA-TRANS-005/006; AC-3/4 | Duplicate same request returns same result, hash conflict rejects, stale version rejects, concurrent join/data write is audited |
-| 9 | Add transaction and invitation API routes | `src/app/api/transactions/route.ts`, `src/app/api/transactions/[id]/route.ts`, `src/app/api/transactions/[id]/join/route.ts`, `src/app/api/transactions/[id]/role-data/route.ts`, `src/app/api/invitations/[token]/route.ts`, `src/app/api/invitations/[token]/join/route.ts`, `src/app/api/transactions/[id]/invitations/reissue/route.ts` | All ticket API actions; UX/UI IDs; AC-1..4 | Request-level authorization, token-param preview/join/reissue, validation, status/state-version response, safe errors, no payment endpoints |
-| 10 | Wire role-start, creation, invitation, join, and role-data UI | `src/app/dashboard/page.tsx`, `src/app/transactions/*`, `src/components/transactions/*`, `src/app/globals.css` | UX-FLOW-002..006, UX-FLOW-009..012; UI-SCR-002..009; QA-UI-001 | Mobile-width render and loading, validation, duplicate, expired, wrong-account, unauthorized, waiting, success, and recovery states |
-| 11 | Add transaction unit/integration/security tests | `tests/unit/transaction/*`, `tests/integration/transaction/*` | QA-TRANS-001..006, QA-SEC-001, QA-UI-001 | Both creation modes, invitation lifecycle, ownership, masking, idempotency, state conflict, concurrency, audit, and handoff boundary |
-| 12 | Validate BAYAR-003 and document handoff | `docs/execution/BAYAR-003/04-validation.md` | Ticket Definition of Done and BAYAR-004 dependency | Typecheck, lint, build, tests, migration check, local PostgreSQL health, `git diff --check`, payment boundary assertion |
+| 1 | Keep the existing transaction/item/terms/role-owned tables as the aggregate foundation. Add an additive migration with a duplicate preflight, then enforce one non-revoked/non-used invitation per transaction and target role. Update schema declaration and migration journal; do not touch legacy payment tables. | `src/server/db/schema.ts`, `drizzle/0005_bayar003_invitation_boundary.sql`, `drizzle/meta/_journal.json` | UR-PARTICIPANT-001..003, UR-INIT-004/005; TRD 5/6/10; AC-3 | Clean migration, preflight collision, index inspection, revoked/used compatibility, and duplicate concurrent invitation fixtures |
+| 2 | Harden the existing Zod contracts and calculation boundary. Preserve physical-goods validation and server-derived terms; reject Admin as an initiator/participant and never accept client-supplied total/service fee. | `src/server/transaction/contracts.ts`, `src/server/transaction/calculation.ts` | UR-INIT-001/003, UR-SYSTEM-001, UR-BR-005..007; UI-SCR-003/004; AC-1/3 | Valid/invalid Seller and Buyer payloads, prohibited/invalid goods, price/quantity/shipping/fee calculation tests |
+| 3 | Keep creation atomic and server-authoritative. Require a verified session account, accept either Buyer or Seller initiator, persist the initiator participant and only its owned data, create one invitation, and return the raw token once. | `src/server/transaction/service.ts`, `src/app/api/transactions/route.ts` | UR-INIT-001/003, UR-SELLER-001, UR-BUYER-003, UR-BR-001; UX-FLOW-002/003/007/008; UI-SCR-002..004; AC-1 | Atomic creation rollback, role authorization, idempotent duplicate create, no raw token audit/log, initial `WAITING_COUNTERPARTY` |
+| 4 | Harden invitation preview/reissue. Preview remains public and safe; reissue requires a valid session, verified WhatsApp, non-Admin creator, `WAITING_COUNTERPARTY`, expected state version, and idempotency. Hash route tokens for lookup, revoke old links before replacement, serialize creator/state checks, and return the replacement raw token only in the command response. | `src/server/transaction/invitation.ts`, `src/app/api/invitations/[token]/route.ts`, `src/app/api/transactions/[id]/invitations/reissue/route.ts` | UR-INIT-002/004/005; UX-FLOW-004/009; UI-SCR-005; AC-1/2 | Expired/revoked/used preview, unverified/non-creator/Admin reissue denial, stale state, idempotency/hash conflict, concurrent reissue, and safe response/audit tests |
+| 5 | Harden invitation join with a transaction/row lock, exact lifecycle predicates, opposite-role validation, distinct-account rejection, one role per transaction, expected state version, and atomic invitation consumption plus participant insert. | `src/server/transaction/service.ts`, `src/app/api/invitations/[token]/join/route.ts` | UR-BUYER-001/002, UR-SELLER-002/003, UR-PARTICIPANT-001/002; UX-FLOW-005/006/010; UI-SCR-006..008; AC-2/3 | Same-account, wrong-role, expired/revoked/used, duplicate/concurrent join, stale version, Admin/unverified denial, and exactly-one-Buyer/one-Seller tests |
+| 6 | Update role-data completion to enforce owner-only writes and immutable snapshots. In one transaction, lock/read the transaction, terms, and participant rows; reject any write when `transaction_terms.frozen_at IS NOT NULL`; use transaction ID, `WAITING_COUNTERPARTY_DATA`, and expected state version as guards. When the second role dataset is complete, set `frozen_at`, keep state at `WAITING_COUNTERPARTY_DATA`, return derived `readyForPaymentInstructions: true`, and never call `issuePaymentInstructions`. Keep all destination/shipping `locked_at` fields null for BAYAR-004. | `src/server/transaction/service.ts`, `src/server/transaction/read.ts`, `src/app/api/transactions/[id]/role-data/route.ts` | UR-BUYER-002/003, UR-SELLER-002/003, UR-PARTICIPANT-003, UR-BR-027..030; UX-FLOW-006/011/012; UI-SCR-007..009; AC-3/4 | Owner-only write, attempted-write-after-freeze, state/version conflict, idempotent duplicate save, derived readiness, and no invoice/instructions/deadline/payment-state row tests |
+| 7 | Harden participant read projections. Keep transaction access participant-scoped; expose own permitted data, masked other-participant contact/destination data, and only the shipping summary allowed to the Seller. Never return raw bank values or unrelated participant data. | `src/server/transaction/read.ts`, `src/app/api/transactions/[id]/route.ts`, `src/app/api/transactions/[id]/role-data/route.ts` | UR-PARTICIPANT-001..003, UR-BR-032/037; UI-SCR-005/009; QA-SEC-001 | Owner/masked DTO tests, unrelated-account denial, Admin boundary, raw-value absence from JSON/log/audit |
+| 8 | Reuse and harden idempotency, state-version, and transaction audit behavior. The service/domain mutation boundary creates one correlation ID and writes one sanitized rejection audit event for self-join, wrong role, stale version, expired/revoked/used invitation, unauthorized ownership, Admin/unverified action, and duplicate/conflicting mutation. Successful business mutation and audit remain atomic; rejected business mutation rolls back and rejection audit is written separately. | `src/server/transaction/mutation.ts`, `src/server/transaction/audit.ts`, `src/server/auth/authorization.ts`, affected route handlers | UR-SYSTEM-001, UR-BR-001/037; QA-TRANS-005/006, QA-SEC-001; AC-3/4 | Same key/hash replay, hash conflict, stale version, one-event-per-rejection assertions, audit rollback/rejection, route/service correlation checks, and sensitive-payload redaction tests |
+| 9 | Preserve and complete the existing UI routes/components for role start, creation, invitation waiting/join, role completion, and transaction status. Add loading, validation, duplicate, expired, wrong-account, unauthorized, waiting, frozen, and recovery states without exposing payment UI. | `src/app/dashboard/page.tsx`, `src/app/transactions/new/page.tsx`, `src/app/transactions/[id]/page.tsx`, `src/app/invite/[token]/page.tsx`, `src/components/transactions/*`, `src/app/globals.css` | UX-FLOW-002..006, UX-FLOW-009..012; UI-SCR-002..009; QA-UI-001 | Manual mobile-width desktop check, keyboard/error states, state refresh, invitation recovery, and no payment action before BAYAR-004 |
+| 10 | Add focused domain, route, and PostgreSQL integration tests, then record validation and handoff evidence. | `tests/unit/transaction.test.ts`, `tests/integration/transaction.test.ts`, `docs/execution/BAYAR-003/04-validation.md` | QA-TRANS-001..006, QA-SEC-001, QA-UI-001; ticket Definition of Done | Tests, typecheck, lint, build, migration check, PostgreSQL health, payment-boundary assertion, and `git diff --check` |
 
-### Schema Plan
+### Schema And Migration Plan
 
-The existing `transactions`, `transaction_participants`, `transaction_terms`,
-and `invitations` tables remain the aggregate foundation. Add only the
-following ticket-owned persistence:
+The current schema already contains `transaction_items`, `transaction_terms`,
+`buyer_shipping_addresses`, `seller_payout_destinations`,
+`buyer_refund_destinations`, `transaction_participants`, and `invitations`.
+Do not recreate these tables or add payment schema here.
 
-- `transaction_items`: one row per transaction with `transaction_id` as the
-  primary key; item name, description, category, condition, quantity, and
-  optional photo reference. It references `transactions` and is immutable at
-  the BAYAR-004 payment-instruction lock boundary.
-- `buyer_shipping_addresses`: one row per Buyer participant and transaction;
-  `transaction_id`, `participant_account_id`, `recipient_name`,
-  `phone_snapshot`, `address_line`, `district`, `city`, `province`,
-  `postal_code`, `created_at`, and `locked_at`. It has foreign keys to the
-  transaction and participant, a unique `(transaction_id,
-  participant_account_id)` constraint, and is writable only by the bound
-  Buyer before the BAYAR-004 lock boundary.
-- `seller_payout_destinations`: one row per Seller participant and transaction;
-  `transaction_id`, `participant_account_id`, `bank_name`,
-  `account_holder_name`, `raw_account_value`, `masked_account_value`,
-  `created_at`, and `locked_at`. It has foreign keys to the transaction and
-  participant, a unique `(transaction_id, participant_account_id)` constraint,
-  and is created only by the Seller; Buyer and Admin cannot replace it.
-- `buyer_refund_destinations`: one row per Buyer participant and transaction;
-  `transaction_id`, `participant_account_id`, `bank_name`,
-  `account_holder_name`, `raw_account_value`, `masked_account_value`,
-  `created_at`, and `locked_at`. It has foreign keys to the transaction and
-  participant, a unique `(transaction_id, participant_account_id)` constraint,
-  and is created only by the Buyer; Seller and Admin cannot replace it.
-- Raw destination fields are server-only repository fields. Participant DTOs
-  return masked values for the other participant and the permitted raw value
-  only to the owning participant when policy allows; the Seller receives only
-  the permitted shipping summary needed for fulfillment; Admin DTOs return raw
-  values only to an authorized Admin task. No raw destination or shipping
-  address field is included in audit payloads.
-- `locked_at` remains null in BAYAR-003. BAYAR-004 sets it atomically when it
-  creates payment instructions; all later writes are rejected. Add indexes for
-  transaction/participant ownership and enforce one Buyer and one Seller per
-  transaction using the existing role unique index plus service-side opposite-
-  role checks. If a partial active-invite index is added, it must cover only
-  non-revoked/non-used invitations.
+Add only this additive active-invitation index, after a preflight in the same
+migration confirms that no duplicate active pair already exists:
 
-No `payment_instructions` migration or write is part of this ticket.
+```sql
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT transaction_id, target_role
+    FROM invitations
+    WHERE revoked_at IS NULL AND used_at IS NULL
+    GROUP BY transaction_id, target_role
+    HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'Cannot create active invitation index: duplicate active invitations exist';
+  END IF;
+END $$;
+```
+
+Then create the consistently named index:
+
+```sql
+CREATE UNIQUE INDEX invitations_one_active_target_idx
+ON invitations (transaction_id, target_role)
+WHERE revoked_at IS NULL AND used_at IS NULL;
+```
+
+The migration journal entry and Drizzle schema declaration must use the same
+index name. Existing revoked/used invitations remain compatible because they do
+not participate in the partial predicate. If the preflight fails, no index is
+created; the recovery instruction is to identify and explicitly revoke or
+resolve duplicates, then rerun the unchanged migration.
+
+The existing transaction/participant foreign keys, one-role index, raw/masked
+destination columns, and lock timestamps remain the persistence contract.
+Distinct account enforcement is a transaction-locked service invariant because
+it spans participant rows; it must be tested under concurrent joins. No legacy
+`payment_instructions` column/table is removed or modified.
+
+`transaction_terms.frozen_at` is the BAYAR-003 freeze marker once both role
+datasets are complete. BAYAR-003 does not set payable-time destination
+`locked_at`; BAYAR-004 owns that lock while creating the Midtrans invoice
+boundary.
 
 ### Payment Handoff Contract
 
-- When the second role's required data is complete, BAYAR-003 keeps the
-  transaction state at `WAITING_COUNTERPARTY_DATA` and returns a derived
-  `readyForPaymentInstructions: true` value in the authorized response.
-- This derived field is not a transaction state and does not start a timer.
-- BAYAR-004 consumes this readiness, creates immutable `payment_instructions`,
-  and performs the approved transition to `WAITING_BUYER_PAYMENT`.
-- BAYAR-003 tests must assert that no payment instruction row and no deadline
-  exists after role-data completion.
+- Role completion leaves the transaction in `WAITING_COUNTERPARTY_DATA`.
+- The authorized response may expose derived
+  `readyForPaymentInstructions: true`; this is not a transaction state.
+- BAYAR-003 creates no payment instruction, invoice, payment deadline, claim,
+  payment status, or payment audit event.
+- BAYAR-004 revalidates participants, frozen terms, state version, and role
+  data before creating the Midtrans invoice/payment link and starting the
+  absolute deadline.
+- The legacy `payment_instructions` table remains compatibility-only and is not
+  read or written by this ticket.
 
 ### Invitation API Contract
 
-- `POST /api/transactions` accepts only an authenticated verified account and
-  returns the transaction plus a raw invitation token exactly once. The token
-  is accepted only as a route parameter by later invitation endpoints.
-- `GET /api/invitations/[token]` hashes the route token for lookup, validates
-  expiry/revocation/use, and returns only the permitted pre-join summary. It
-  does not bind an account, expose payout/refund data, or return the token.
-- `POST /api/invitations/[token]/join` hashes the route token, validates the
-  authenticated verified account, opposite role, distinct-account rule,
-  `usedAt`/`revokedAt`/expiry, idempotency key, and expected state version. A
-  successful join consumes the invitation atomically.
-- `POST /api/transactions/[id]/invitations/reissue` is initiator-only while
-  the counterparty has not joined. It revokes the previous active invitation,
-  creates a new hash/token, and returns the new raw token once. It uses
-  idempotency and state-version checks.
-- Expired, revoked, used, wrong-account, unauthorized, duplicate, and stale
-  requests return safe errors and recovery instructions without revealing raw
-  tokens or sensitive participant data. All route mutations are audited.
-
-### Calculation Contract
-
-- Item price is an integer rupiah amount from Rp100,000 through Rp5,000,000.
-- Shipping cost is a non-negative integer rupiah amount.
-- Buyer service fee is 2% of item price, with a Rp10,000 minimum and Rp50,000
-  maximum.
-- Buyer total is item price plus shipping cost plus service fee.
-- Calculations are server-derived and persisted consistently in
-  `transaction_terms`; clients cannot submit a trusted total or service fee.
+- `POST /api/transactions` accepts a verified session account and returns one
+  raw invitation token only in the creation result.
+- `GET /api/invitations/[token]` hashes the route token, validates lifecycle,
+  and returns only permitted pre-join item/terms/participant summary.
+- `POST /api/invitations/[token]/join` validates verified session, opposite
+  role, distinct account, expiry/revocation/use, idempotency, and state version,
+  then consumes the invitation atomically.
+- `POST /api/transactions/[id]/invitations/reissue` requires a valid session,
+  verified WhatsApp, non-Admin creator ownership, `WAITING_COUNTERPARTY`,
+  expected state version, and idempotency. It revokes old active links, creates
+  one replacement, and returns its raw token once.
+- Raw token is never stored, logged, audited, or included in generic errors;
+  only its hash and safe lifecycle references persist.
 
 ## State And Data Impact
 
 ~~~text
 State transitions added/changed:
-- Creation: no prior transaction -> WAITING_COUNTERPARTY.
-- Opposite-role join: WAITING_COUNTERPARTY -> WAITING_COUNTERPARTY_DATA.
-- Role-data completion does not advance the transaction state in BAYAR-003;
-  it exposes derived readiness for BAYAR-004. No new transaction state is
-  introduced and WAITING_BUYER_PAYMENT is not claimed by this ticket.
+- Creation starts at WAITING_COUNTERPARTY.
+- Successful opposite-role join changes WAITING_COUNTERPARTY to
+  WAITING_COUNTERPARTY_DATA.
+- Completing role data does not change transaction state. It freezes approved
+  terms/readiness and returns a derived handoff flag only.
+- WAITING_BUYER_PAYMENT and every payment/provider state remain owned by
+  BAYAR-004 and are not introduced here.
 
 Schema/migration impact:
-- Add transaction_items, buyer_shipping_addresses,
-  seller_payout_destinations, and buyer_refund_destinations with
-  transaction/participant foreign keys, unique ownership keys, masked/raw
-  projections, and immutable-lock support.
-- Preserve existing transaction, participant, terms, invitation, idempotency,
-  and audit tables. Do not modify payment instructions.
+- Reuse existing transaction and role-owned tables.
+- Add the active invitation uniqueness index through `0005_bayar003_invitation_boundary.sql`
+  after the duplicate preflight; keep its name consistent in schema, SQL, journal,
+  and inspection tests.
+- Preserve raw/masked destination boundaries and leave payable-time lockedAt
+  null until BAYAR-004.
+- Do not touch payment_instructions or Midtrans tables/routes.
 
 Authorization impact:
-- Require authenticated, verified WhatsApp account for every command.
-- Resolve actor from the session/database, never from client role/account data.
-- Only Buyer/Seller can be transaction participants; Admin is operational only.
-- Enforce creator role, opposite join role, distinct accounts, one role each,
-  participant ownership, and sensitive-data masking server-side.
+- Require authenticated, WhatsApp-verified accounts for every command, including
+  invitation reissue; invitation preview remains a public read of safe data.
+- Resolve actor from the server session; never trust client account IDs.
+- Only Buyer/Seller can create or join product transactions; Admin is not a
+  participant and product roles remain transaction-scoped.
+- Enforce initiator ownership, opposite role, distinct account, one role each,
+  participant ownership, and raw/masked data boundaries server-side.
 
 Audit/notification impact:
-- Append events for transaction creation, invitation issue/reissue/revoke,
-  join, same-account denial, wrong-role denial, role-data completion,
-  ownership denial, state-version conflict, and idempotency conflict.
-- Do not put raw invitation tokens, bank account values, or other sensitive
-  values in audit payloads. External invitation sharing remains manual.
+- Append successful creation, invitation issue/reissue/revoke, join, role-data
+  completion, and state/version mutation events in the same transaction.
+- The transaction/domain mutation service owns one sanitized rejection audit
+  event per rejected command and passes one correlation ID through route and
+  service handling. Cover self-join, wrong role, unauthorized ownership,
+  stale version, expired/revoked/used invitation, Admin/unverified action, and
+  duplicate/conflicting mutation.
+- Never put raw invitation tokens, raw bank values, full shipping data, or
+  payment/provider data in audit.
+- Invitation sharing remains a manual external handoff; no WhatsApp provider
+  integration is added.
 
 Manual operation impact:
-- The initiator manually shares the invitation outside BayarAman.
-- No payment, WhatsApp group, bank, or financial operation is performed.
+- Initiator manually shares the invitation link.
+- No Admin payment review, Midtrans operation, WhatsApp group, payout, refund,
+  complaint, cancellation, or risk operation is performed.
 ~~~
 
 ## Test Plan
 
 | Layer | Case | Expected evidence |
 | --- | --- | --- |
-| Static/lint/type | Typecheck, lint, build | New transaction modules/routes compile without payment scope |
-| Unit | Physical-goods validation and calculation | Invalid category/condition/price/quantity rejected; fee and total are server-derived |
-| Unit | Invitation token generation/hash/expiry | Raw token is not persisted/logged; expired/revoked/used tokens fail |
-| Unit | State and role guards | Admin creator, same-account join, same-role join, duplicate role, and invalid state fail |
-| Unit | Idempotency and state-version | Same key/hash returns same result; hash mismatch and stale version reject |
-| Integration | Seller-created transaction | Verified Seller creates `WAITING_COUNTERPARTY` with seller-owned data and buyer invitation |
-| Integration | Buyer-created transaction | Verified Buyer creates `WAITING_COUNTERPARTY` without seller payout data |
-| Integration | Opposite-role join and completion | Distinct verified account joins, owns only its fields including shipping address, and reaches derived readiness |
-| Integration | Concurrent join/role-data mutation | One authoritative result; conflicting mutation rejected and audited |
-| Integration | Authorized transaction read/projection | Participant receives permitted/masked view, Buyer address follows ownership policy, and unrelated account is denied |
-| Integration | Invitation preview/join/reissue routes | Token-param preview is safe; join consumes once; reissue revokes prior token; duplicate/expired/wrong-account paths recover safely |
-| Integration | Destination constraints and lock boundary | One destination per participant, raw/masked projections are enforced, and writes fail after BAYAR-004 lock |
-| Integration | Payment handoff boundary | No payment instruction, payment claim, timer, or payment review is created |
-| UI/manual | UI-SCR-002..009 on desktop mobile-width surface | Loading, validation, duplicate, expired, wrong-account, unauthorized, waiting, success, and recovery states are usable |
-| Database | Migration and constraints against OrbStack PostgreSQL | Tables/indexes/FKs apply cleanly and rollback/recovery is documented |
+| Static/lint/type | Typecheck, lint, build, migration check | Transaction changes compile without payment scope |
+| Unit | Zod contracts and calculations | Invalid role/fields/goods rejected; total and fee are server-derived |
+| Unit | Invitation token/lifecycle helpers | Hash-only persistence, expiry, revoke/use behavior, and safe errors |
+| Unit | State, ownership, masking, and idempotency | Admin/self-join/cross-role writes reject; same request replays; hash conflict/stale version reject |
+| PostgreSQL integration | Creation aggregate and constraints | Atomic rows, foreign keys, one Buyer/one Seller, active invitation uniqueness, clean/collision migration behavior, and rollback |
+| PostgreSQL integration | Concurrent join/reissue/role-data | One authoritative mutation; conflict returns safe result and audit; no duplicate participant or active link |
+| PostgreSQL integration | Freeze/payment boundary | Both datasets set `frozen_at`; attempted later role-data write is rejected while destination/shipping `locked_at` stays null; no `payment_instructions`, invoice, deadline, claim, or payment state is created |
+| PostgreSQL integration | Projection/security | Participant ownership, masked destination, Seller shipping summary, unrelated-account denial, and audit redaction |
+| API integration | Create, preview, join, reissue, read, role-data routes | Auth, verified WhatsApp including reissue, idempotency, expected version, token lifecycle, one rejection audit/correlation, safe errors, and recovery paths |
+| UI/manual | UI-SCR-002..009 | Mobile-width desktop surface, loading, validation, waiting, expired, unauthorized, frozen, and recovery states |
 
 ## Risks And Safeguards
 
 | Risk | Safeguard | Recovery/rollback |
 | --- | --- | --- |
-| Role-owned fields leak across participants | Server derives ownership; read DTO masks other participant; raw destination never enters client payload | Reject and audit unauthorized request; preserve stored snapshot |
-| Same account joins both roles | Compare authenticated account ID to creator/participant inside transaction and enforce distinct-account checks | Return deterministic rejection; invitation remains unused when join fails |
-| Invitation is replayed or raced | Hash token, conditional used/revoked/expiry check, row transaction, and idempotency key | Return existing join result or reject conflict; never bind a second account |
-| Duplicate active invitations confuse the counterparty | Reissue revokes prior link and active-link query/index is enforced | Show the latest invitation; old token remains invalid |
-| Client submits incorrect total/fee | Server calculates approved fee and total from integer inputs | Reject request without partial transaction |
-| Role data completes while BAYAR-004 reads readiness | Use state version and transaction lock; return canonical version/readiness; BAYAR-004 revalidates before issuing instructions | Retry with current state/version; never start timer in BAYAR-003 |
-| Payment behavior accidentally enters this ticket | No payment instruction writes/routes/deadline code; explicit boundary test | Remove out-of-scope mutation and keep handoff contract |
-| Raw bank data is exposed through audit/API | Restricted server read path, masked DTOs, payload redaction, and ownership checks | Revoke response path and audit denial; do not rewrite snapshot evidence |
-| Invitation expiry/reissue creates orphan state | Revoke old link append-only through invitation lifecycle fields and audit event | Reissue latest valid link; no destructive deletion |
+| Role-owned values leak across participants | Server-derived ownership, masked DTOs, and raw-value exclusion from client/audit | Reject and audit unauthorized read/write; preserve snapshots |
+| Same account joins both roles | Lock transaction, compare authenticated account with creator/participants, and enforce one role per transaction | Deterministic rejection; invitation remains unused on failed join |
+| Invitation replay or race | Hash token, row/transaction lock, lifecycle predicates, partial active-target index, and idempotency | Return prior result or reject conflict; never bind a second participant |
+| Concurrent reissue creates two active links | Lock creator transaction, run the active-pair preflight during migration, and enforce `invitations_one_active_target_idx` | Keep one committed link; safely retry with current state/version |
+| Incorrect client total/fee | Calculate and persist terms server-side | Reject before partial mutation |
+| Role data changes after freeze or while BAYAR-004 reads readiness | Guard role-data writes with transaction ID, `WAITING_COUNTERPARTY_DATA`, `frozen_at IS NULL`, and state version; require BAYAR-004 revalidation | Reject after freeze; retry pre-freeze conflicts with current version; never start timer in BAYAR-003 |
+| Legacy manual payment path is reintroduced | Remove the `issuePaymentInstructions` call from role completion and add a no-payment integration assertion | Roll back only the ticket mutation; leave legacy compatibility tables untouched |
+| Raw bank/shipping data enters audit/API | Explicit projections, sanitized audit allowlist, and owner checks | Reject response/mutation and record sanitized denial |
+| UI implies payment is ready too early | Show only waiting/frozen/readiness handoff; no invoice or payment action | Refresh status and direct user to missing owner action |
 
 ## Plan Completion Check
 
-- [x] Every BAYAR-003 acceptance criterion maps to a planned change and verification.
+- [x] Every ticket acceptance criterion maps to a planned change and verification.
 - [x] Seller-created and buyer-created paths are separately covered.
-- [x] Invitation, distinct-account, opposite-role, and single-use rules are explicit.
-- [x] Buyer/Seller ownership and sensitive-data masking are explicit.
-- [x] Buyer shipping-address persistence, ownership, masking, and lock boundary are explicit.
-- [x] Invitation preview, join, and reissue routes are concrete.
-- [x] Destination keys, raw/masked projections, and immutable lock behavior are explicit.
-- [x] Payment instructions and the 1x24h timer are explicitly handed off to BAYAR-004.
+- [x] Invitation preview, join, reissue, expiry, revoke/use, and raw-token boundary are concrete.
+- [x] Reissue requires valid session, verified WhatsApp, creator ownership, and `WAITING_COUNTERPARTY`.
+- [x] Migration has a duplicate active-invitation preflight, consistent index name, journal entry, collision test, and recovery instruction.
+- [x] Buyer/Seller ownership, distinct accounts, masking, and immutable snapshots are explicit.
+- [x] `frozen_at` is an exact role-data write guard; payable-time `locked_at` remains BAYAR-004-owned.
+- [x] Existing code paths are named accurately; no nonexistent module is assumed.
+- [x] Payment instructions, Midtrans invoice, deadline, and payment state are explicitly handed off to BAYAR-004.
 - [x] No new transaction state, product role, payment, or financial operation is planned.
-- [x] Idempotency, state-version, concurrency, audit, failure, and recovery behavior are covered.
-- [x] UI-SCR-002 through UI-SCR-009 have planned implementation and verification.
-- [x] Schema/migration order and local PostgreSQL validation are planned.
-- [x] All findings from the previous Plan Review are addressed.
-- [ ] Plan Review approval is still required before implementation.
+- [x] Idempotency, state version, concurrency, audit, failure, and recovery are covered.
+- [x] One sanitized rejection audit event and correlation ID are assigned to the transaction/domain mutation boundary.
+- [x] UI-SCR-002 through UI-SCR-009 have implementation and verification boundaries.
+- [x] Migration order and local PostgreSQL validation are planned.
+- [ ] Plan Review approval is required before implementation.
 
 ## Status
 

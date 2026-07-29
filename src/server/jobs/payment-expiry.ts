@@ -1,39 +1,42 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
 import { db } from "@/server/db";
-import { paymentClaims, paymentInstructions, transactions } from "@/server/db/schema";
+import { paymentInvoices, transactions } from "@/server/db/schema";
 import { recordTransactionEvent } from "@/server/transaction/audit";
 
-export async function expireDuePaymentInstructions(now = new Date()): Promise<number> {
+export async function expirePaymentInvoices(now = new Date()): Promise<number> {
   const candidates = await db.select({
     transactionId: transactions.id,
-    stateVersion: transactions.stateVersion
+    stateVersion: transactions.stateVersion,
+    deadlineAt: paymentInvoices.deadlineAt
   }).from(transactions)
-    .innerJoin(paymentInstructions, eq(paymentInstructions.transactionId, transactions.id))
-    .leftJoin(paymentClaims, and(
-      eq(paymentClaims.transactionId, transactions.id),
-      eq(paymentClaims.active, true)
+    .innerJoin(paymentInvoices, and(
+      eq(paymentInvoices.transactionId, transactions.id),
+      eq(paymentInvoices.isActive, true)
     ))
     .where(and(
       eq(transactions.state, "WAITING_BUYER_PAYMENT"),
-      isNull(paymentClaims.id)
+      lte(paymentInvoices.deadlineAt, now)
     ));
 
   let expired = 0;
   for (const candidate of candidates) {
     await db.transaction(async (tx) => {
-      const [instruction] = await tx.select().from(paymentInstructions)
-        .where(eq(paymentInstructions.transactionId, candidate.transactionId)).limit(1);
-      const [updated] = instruction && instruction.deadlineAt.getTime() <= now.getTime()
-        ? await tx.update(transactions).set({
+      const [updated] = await tx.update(transactions).set({
           state: "PAYMENT_EXPIRED",
           stateVersion: candidate.stateVersion + 1,
           updatedAt: now
         }).where(and(
           eq(transactions.id, candidate.transactionId),
           eq(transactions.state, "WAITING_BUYER_PAYMENT"),
-          eq(transactions.stateVersion, candidate.stateVersion)
+          eq(transactions.stateVersion, candidate.stateVersion),
+          sql`EXISTS (
+            SELECT 1 FROM payment_invoices
+            WHERE payment_invoices.transaction_id = ${transactions.id}
+              AND payment_invoices.is_active = true
+              AND payment_invoices.deadline_at <= ${now}
+          )`
         )).returning({ id: transactions.id })
-        : [];
+      ;
 
       if (!updated) return;
       expired += 1;

@@ -36,6 +36,20 @@
       "when": 1784805026034,
       "tag": "0004_bayar002_auth_boundaries",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785328000000,
+      "tag": "0005_bayar003_invitation_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785328001000,
+      "tag": "0006_bayar004_invoice_integrity",
+      "breakpoints": true
     }
   ]
 }
