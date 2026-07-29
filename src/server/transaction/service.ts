@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/server/db";
 import {
   buyerRefundDestinations,
@@ -17,7 +17,8 @@ import type { CreateTransactionInput, RoleDataInput } from "./contracts";
 import { findIdempotentResult, saveIdempotentResult } from "./mutation";
 import { recordTransactionEvent } from "./audit";
 import { createInvitationToken } from "./token";
-import { issuePaymentInstructions } from "@/server/payment/payment";
+import { recordRejectedMutationEvent } from "./audit";
+import { randomUUID } from "node:crypto";
 
 const INVITATION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -153,9 +154,12 @@ export async function joinInvitation(
   expectedStateVersion: number | undefined,
   idempotency: { key: string; requestHash: string }
 ) {
-  if (!canParticipate(actor) || actor.isAdmin) throw new Error("PARTICIPATION_NOT_ALLOWED");
+  const correlationId = randomUUID();
+  let rejectionTransactionId: string | undefined;
+  try {
+    if (!canParticipate(actor) || actor.isAdmin) throw new Error("PARTICIPATION_NOT_ALLOWED");
 
-  return db.transaction(async (tx) => {
+    return await db.transaction(async (tx) => {
     const prior = await findIdempotentResult(tx, actor.id, "INVITATION_JOIN", idempotency.key, idempotency.requestHash);
     if (prior) return prior;
 
@@ -165,11 +169,12 @@ export async function joinInvitation(
     }
     if (invitation.targetRole === "ADMIN") throw new Error("INVITATION_INVALID");
     if (invitation.targetRole === "BUYER" || invitation.targetRole === "SELLER") {
+      rejectionTransactionId = invitation.transactionId;
+      await tx.execute(sql`SELECT id FROM transactions WHERE id = ${invitation.transactionId} FOR UPDATE`);
       const [transaction] = await tx.select().from(transactions).where(eq(transactions.id, invitation.transactionId)).limit(1);
       if (!transaction || transaction.state !== "WAITING_COUNTERPARTY") throw new Error("INVITATION_NOT_JOINABLE");
       if (expectedStateVersion !== undefined) assertExpectedStateVersion(transaction.stateVersion, expectedStateVersion);
       if (transaction.creatorAccountId === actor.id) {
-        await recordTransactionEvent(tx, { transactionId: transaction.id, actorAccountId: actor.id, eventType: "SELF_JOIN_DENIED", stateVersion: transaction.stateVersion });
         throw new Error("SELF_JOIN_NOT_ALLOWED");
       }
 
@@ -197,7 +202,17 @@ export async function joinInvitation(
       return result;
     }
     throw new Error("INVITATION_INVALID");
-  });
+    });
+  } catch (error) {
+    await recordRejectedMutationEvent({
+      transactionId: rejectionTransactionId,
+      actorAccountId: actor.id,
+      eventType: "TRANSACTION_MUTATION_REJECTED",
+      correlationId,
+      reason: error instanceof Error ? error.message : "MUTATION_REJECTED"
+    }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function saveRoleData(
@@ -208,14 +223,19 @@ export async function saveRoleData(
   idempotency: { key: string; requestHash: string }
 ) {
   if (!canParticipate(actor)) throw new Error("PARTICIPATION_NOT_ALLOWED");
-
-  return db.transaction(async (tx) => {
+  const correlationId = randomUUID();
+  try {
+    return await db.transaction(async (tx) => {
     const prior = await findIdempotentResult(tx, actor.id, "ROLE_DATA_SAVE", idempotency.key, idempotency.requestHash);
     if (prior) return prior;
 
+    await tx.execute(sql`SELECT id FROM transactions WHERE id = ${transactionId} FOR UPDATE`);
     const [transaction] = await tx.select().from(transactions).where(eq(transactions.id, transactionId)).limit(1);
     if (!transaction || transaction.state !== "WAITING_COUNTERPARTY_DATA") throw new Error("ROLE_DATA_NOT_EDITABLE");
     if (expectedStateVersion !== undefined) assertExpectedStateVersion(transaction.stateVersion, expectedStateVersion);
+
+    const [terms] = await tx.select().from(transactionTerms).where(eq(transactionTerms.transactionId, transactionId)).limit(1);
+    if (!terms || terms.frozenAt !== null) throw new Error("ROLE_DATA_FROZEN");
 
     const [participant] = await tx.select().from(transactionParticipants).where(and(eq(transactionParticipants.transactionId, transactionId), eq(transactionParticipants.accountId, actor.id))).limit(1);
     if (!participant || participant.role !== input.role) throw new Error("ROLE_DATA_NOT_OWNED");
@@ -241,11 +261,25 @@ export async function saveRoleData(
     const nextStateVersion = transaction.stateVersion + 1;
     let result: { transactionId: string; state: TransactionState; stateVersion: number; readyForPaymentInstructions: boolean };
     if (ready) {
-      const issued = await issuePaymentInstructions(tx, transactionId, actor.id, transaction.stateVersion);
+      const now = new Date();
+      const [frozen] = await tx.update(transactionTerms).set({ frozenAt: now }).where(and(
+        eq(transactionTerms.transactionId, transactionId),
+        isNull(transactionTerms.frozenAt)
+      )).returning({ transactionId: transactionTerms.transactionId });
+      if (!frozen) throw new Error("ROLE_DATA_FROZEN");
+      const [updatedTransaction] = await tx.update(transactions)
+        .set({ stateVersion: nextStateVersion, updatedAt: now })
+        .where(and(
+          eq(transactions.id, transactionId),
+          eq(transactions.state, "WAITING_COUNTERPARTY_DATA"),
+          eq(transactions.stateVersion, transaction.stateVersion)
+        ))
+        .returning({ id: transactions.id });
+      if (!updatedTransaction) throw new Error("STATE_VERSION_CONFLICT");
       result = {
         transactionId,
-        state: "WAITING_BUYER_PAYMENT",
-        stateVersion: issued.stateVersion,
+        state: "WAITING_COUNTERPARTY_DATA",
+        stateVersion: nextStateVersion,
         readyForPaymentInstructions: true
       };
       await recordTransactionEvent(tx, {
@@ -253,8 +287,8 @@ export async function saveRoleData(
         actorAccountId: actor.id,
         eventType: "ROLE_DATA_COMPLETED",
         beforeState: transaction.state,
-        afterState: "WAITING_BUYER_PAYMENT",
-        stateVersion: issued.stateVersion,
+        afterState: "WAITING_COUNTERPARTY_DATA",
+        stateVersion: nextStateVersion,
         payload: { role: input.role, readyForPaymentInstructions: true }
       });
     } else {
@@ -268,5 +302,15 @@ export async function saveRoleData(
     }
     await saveIdempotentResult(tx, actor.id, "ROLE_DATA_SAVE", idempotency.key, idempotency.requestHash, result);
     return result;
-  });
+    });
+  } catch (error) {
+    await recordRejectedMutationEvent({
+      transactionId,
+      actorAccountId: actor.id,
+      eventType: "TRANSACTION_MUTATION_REJECTED",
+      correlationId,
+      reason: error instanceof Error ? error.message : "MUTATION_REJECTED"
+    }).catch(() => undefined);
+    throw error;
+  }
 }

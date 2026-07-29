@@ -1,10 +1,13 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/server/db";
 import { invitations, transactionItems, transactionParticipants, transactionTerms, transactions } from "@/server/db/schema";
 import { assertExpectedStateVersion } from "@/server/domain/transaction/state";
 import { recordTransactionEvent } from "./audit";
 import { findIdempotentResult, saveIdempotentResult } from "./mutation";
 import { createInvitationToken, hashInvitationToken } from "./token";
+import { canParticipate } from "@/server/auth/authorization";
+import { recordRejectedMutationEvent } from "./audit";
+import { randomUUID } from "node:crypto";
 
 export async function previewInvitation(rawToken: string) {
   const tokenHash = hashInvitationToken(rawToken);
@@ -43,16 +46,19 @@ export async function previewInvitation(rawToken: string) {
 }
 
 export async function reissueInvitation(
-  actor: { id: string; isAdmin: boolean },
+  actor: { id: string; isAdmin: boolean; whatsappVerifiedAt: Date | null },
   transactionId: string,
   expectedStateVersion: number | undefined,
   idempotency: { key: string; requestHash: string }
 ) {
-  if (actor.isAdmin) throw new Error("PARTICIPATION_NOT_ALLOWED");
+  const correlationId = randomUUID();
+  try {
+    if (!canParticipate(actor) || actor.isAdmin) throw new Error("PARTICIPATION_NOT_ALLOWED");
 
-  return db.transaction(async (tx) => {
+    return await db.transaction(async (tx) => {
     const prior = await findIdempotentResult(tx, actor.id, "INVITATION_REISSUE", idempotency.key, idempotency.requestHash);
     if (prior) return prior;
+    await tx.execute(sql`SELECT id FROM transactions WHERE id = ${transactionId} FOR UPDATE`);
     const [transaction] = await tx.select().from(transactions).where(eq(transactions.id, transactionId)).limit(1);
     if (!transaction || transaction.creatorAccountId !== actor.id || transaction.state !== "WAITING_COUNTERPARTY") throw new Error("INVITATION_REISSUE_NOT_ALLOWED");
     if (expectedStateVersion !== undefined) assertExpectedStateVersion(transaction.stateVersion, expectedStateVersion);
@@ -68,5 +74,15 @@ export async function reissueInvitation(
     const result = { transactionId, state: transaction.state, stateVersion: transaction.stateVersion, invitationToken: invitation.rawToken, targetRole };
     await saveIdempotentResult(tx, actor.id, "INVITATION_REISSUE", idempotency.key, idempotency.requestHash, result);
     return result;
-  });
+    });
+  } catch (error) {
+    await recordRejectedMutationEvent({
+      transactionId,
+      actorAccountId: actor.id,
+      eventType: "TRANSACTION_MUTATION_REJECTED",
+      correlationId,
+      reason: error instanceof Error ? error.message : "MUTATION_REJECTED"
+    }).catch(() => undefined);
+    throw error;
+  }
 }
