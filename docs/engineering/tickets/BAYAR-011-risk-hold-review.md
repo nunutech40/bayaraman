@@ -11,11 +11,12 @@ Owner: Engineering
 Status: Draft
 Depends on: BAYAR-005, BAYAR-009
 Blocks: BAYAR-008
-Source requirement IDs: UR-ADMIN-016, UR-ADMIN-017, UR-ADMIN-018, UR-ADMIN-019, UR-BR-039, UR-BR-040, UR-BR-045, UR-BR-046, UR-CAN-OD-005, UR-CAN-OD-006
-Source UX Flow IDs: UX-FLOW-063, UX-FLOW-064, UX-FLOW-065, UX-FLOW-066, UX-FLOW-067, UX-FLOW-068, UX-FLOW-069, UX-FLOW-070
-Source UI IDs/states: UI-SCR-020, UI-SCR-024
+Source requirement IDs: UR-CANCEL-022, UR-CANCEL-023, UR-BR-039, UR-BR-040, UR-BR-045, UR-BR-046, UR-BR-060, UR-BR-061, UR-CAN-OD-005, UR-CAN-OD-006
+Source UX Flow IDs: UX-FLOW-072, UX-FLOW-073
+Source UI IDs/states: UI-SCR-024
 Source QA scenario IDs: QA-RISK-001, QA-RISK-002, QA-SEC-003, QA-LAUNCH-001
 Source technical design section: TRD Sections 5, 9, 10, 12, 13, 14, 16
+Downstream financial context only: UR-ADMIN-016, UR-ADMIN-017, UR-ADMIN-018, UR-ADMIN-019, UX-FLOW-063 through UX-FLOW-070, UI-SCR-020
 ~~~
 
 ## Outcome

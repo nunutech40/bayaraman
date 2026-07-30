@@ -57,7 +57,10 @@ async function assertNoHold(tx: any, transactionId: string): Promise<void> {
     eq(complaintHolds.transactionId, transactionId),
     eq(complaintHolds.active, true)
   )).limit(1);
-  const [risk] = await tx.select({ id: riskHolds.id }).from(riskHolds).where(eq(riskHolds.transactionId, transactionId)).limit(1);
+  const [risk] = await tx.select({ id: riskHolds.id }).from(riskHolds).where(and(
+    eq(riskHolds.transactionId, transactionId),
+    eq(riskHolds.active, true)
+  )).limit(1);
   if (complaint || risk) throw new Error("CONFIRMATION_HOLD");
 }
 

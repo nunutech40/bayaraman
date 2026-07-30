@@ -591,7 +591,7 @@ export const adminTaskAssignments = pgTable("admin_task_assignments", {
   assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
   revokedAt: timestamp("revoked_at", { withTimezone: true })
 }, (table) => [
-  check("admin_task_assignments_scope_check", sql.raw("task_scope IN ('COMPLAINT_INTAKE', 'COMPLAINT_APPROVAL')")),
+  check("admin_task_assignments_scope_check", sql.raw("task_scope IN ('COMPLAINT_INTAKE', 'COMPLAINT_APPROVAL', 'RISK_INTAKE', 'RISK_APPROVAL', 'RELEASE_GATE_REVIEW')")),
   uniqueIndex("admin_task_assignments_active_scope_unique")
     .on(table.accountId, table.taskScope)
     .where(sql`${table.revokedAt} IS NULL`)
@@ -706,7 +706,7 @@ export const complaintFinancialHandoffs = pgTable("complaint_financial_handoffs"
   sourceState: transactionState("source_state").notNull(),
   sourceStateVersion: integer("source_state_version").notNull(),
   approvedAt: timestamp("approved_at", { withTimezone: true }).notNull(),
-  consumedByOperationId: uuid("consumed_by_operation_id"),
+  consumedByOperationId: uuid("consumed_by_operation_id").references(() => financialOperations.id, { onDelete: "restrict" }),
   consumedAt: timestamp("consumed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (table) => [
@@ -721,13 +721,187 @@ export const complaintFinancialHandoffs = pgTable("complaint_financial_handoffs"
 
 export const riskHolds = pgTable("risk_holds", {
   id: uuid("id").defaultRandom().primaryKey(),
-  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
+  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "restrict" }),
+  category: text("category").notNull(),
   reason: text("reason").notNull(),
+  note: text("note"),
   evidenceReference: text("evidence_reference"),
   outcome: text("outcome"),
-  createdByAccountId: uuid("created_by_account_id").notNull().references(() => accounts.id),
+  mode: text("mode").notNull().default("ACTIVE_HOLD"),
+  lifecycle: text("lifecycle").notNull().default("OPEN"),
+  active: boolean("active").notNull().default(true),
+  sourceState: transactionState("source_state").notNull(),
+  sourceStateVersion: integer("source_state_version").notNull(),
+  sourceOwnerType: text("source_owner_type"),
+  sourceOwnerId: uuid("source_owner_id"),
+  currentEventId: uuid("current_event_id"),
+  currentReviewId: uuid("current_review_id"),
+  createdByAccountId: uuid("created_by_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true })
+}, (table) => [
+  check("risk_holds_category_check", sql.raw("category IN ('PROHIBITED_OR_POLICY', 'SUSPECTED_FRAUD', 'OTHER_MANUAL_REVIEW')")),
+  check("risk_holds_other_note_check", sql.raw("category <> 'OTHER_MANUAL_REVIEW' OR NULLIF(BTRIM(note), '') IS NOT NULL")),
+  check("risk_holds_mode_check", sql.raw("mode IN ('ACTIVE_HOLD', 'RECORD_ONLY')")),
+  check("risk_holds_lifecycle_check", sql.raw("lifecycle IN ('OPEN', 'REVIEW_PENDING_APPROVAL', 'REVIEWED_HOLD', 'REVIEW_APPROVED', 'CLEARED_TO_MANUAL_REVIEW', 'RECORD_ONLY', 'POST_PROCESSING_RECORDED')")),
+  check("risk_holds_source_version_check", sql.raw("source_state_version >= 0")),
+  check("risk_holds_owner_type_check", sql.raw("source_owner_type IS NULL OR source_owner_type IN ('COMPLAINT_CASE', 'CANCELLATION_CASE', 'REFUND_CASE', 'FINANCIAL_OPERATION', 'TERMINAL_TRANSACTION')")),
+  check("risk_holds_active_mode_check", sql.raw("NOT active OR (mode = 'ACTIVE_HOLD' AND lifecycle NOT IN ('RECORD_ONLY', 'POST_PROCESSING_RECORDED', 'CLEARED_TO_MANUAL_REVIEW', 'REVIEW_APPROVED'))")),
+  check("risk_holds_record_owner_check", sql.raw("mode <> 'RECORD_ONLY' OR (source_owner_type IS NOT NULL AND source_owner_id IS NOT NULL)")),
+  uniqueIndex("risk_holds_one_active_case_unique").on(table.transactionId).where(sql`${table.active} = true`),
+  index("risk_holds_transaction_idx").on(table.transactionId),
+  index("risk_holds_source_owner_idx").on(table.sourceOwnerType, table.sourceOwnerId)
+]);
+
+export const riskEvents = pgTable("risk_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  riskCaseId: uuid("risk_case_id").notNull().references(() => riskHolds.id, { onDelete: "restrict" }),
+  eventType: text("event_type").notNull(),
+  correctedEventId: uuid("corrected_event_id"),
+  actorAccountId: uuid("actor_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  summarySnapshot: text("summary_snapshot").notNull(),
+  evidenceReference: text("evidence_reference"),
+  evidenceHash: text("evidence_hash").notNull(),
+  correctionReason: text("correction_reason"),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => [
+  check("risk_events_type_check", sql.raw("event_type IN ('RISK_RECORDED', 'EVIDENCE_CORRECTED', 'REVIEW_PROPOSED', 'REVIEW_APPROVED', 'REVIEW_REJECTED', 'HANDOFF_CLAIMED', 'POST_PROCESSING_RECORDED')")),
+  check("risk_events_correction_check", sql.raw("(event_type = 'EVIDENCE_CORRECTED') = (corrected_event_id IS NOT NULL AND correction_reason IS NOT NULL)")),
+  foreignKey({ columns: [table.correctedEventId], foreignColumns: [table.id] }).onDelete("restrict"),
+  uniqueIndex("risk_events_case_idempotency_unique").on(table.riskCaseId, table.idempotencyKey),
+  index("risk_events_case_idx").on(table.riskCaseId)
+]);
+
+export const riskReviews = pgTable("risk_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  riskCaseId: uuid("risk_case_id").notNull().references(() => riskHolds.id, { onDelete: "restrict" }),
+  version: integer("version").notNull(),
+  status: text("status").notNull().default("PENDING"),
+  outcome: text("outcome").notNull(),
+  buyerAmount: integer("buyer_amount").notNull().default(0),
+  currency: text("currency").notNull().default("IDR"),
+  calculationHash: text("calculation_hash").notNull(),
+  buyerDestinationBindingId: uuid("buyer_destination_binding_id"),
+  evidenceEventId: uuid("evidence_event_id").notNull().references(() => riskEvents.id, { onDelete: "restrict" }),
+  decisionNote: text("decision_note").notNull(),
+  proposedByAccountId: uuid("proposed_by_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  decidedAt: timestamp("decided_at", { withTimezone: true })
+}, (table) => [
+  check("risk_reviews_status_check", sql.raw("status IN ('PENDING', 'APPROVED', 'REJECTED')")),
+  check("risk_reviews_outcome_check", sql.raw("outcome IN ('KEEP_HOLD', 'CLEAR_TO_MANUAL_REVIEW', 'BUYER_REFUND')")),
+  check("risk_reviews_currency_check", sql.raw("currency = 'IDR'")),
+  check("risk_reviews_amount_destination_check", sql.raw("((outcome = 'BUYER_REFUND' AND buyer_amount > 0 AND buyer_destination_binding_id IS NOT NULL) OR (outcome <> 'BUYER_REFUND' AND buyer_amount = 0 AND buyer_destination_binding_id IS NULL))")),
+  uniqueIndex("risk_reviews_case_version_unique").on(table.riskCaseId, table.version),
+  uniqueIndex("risk_reviews_one_pending_unique").on(table.riskCaseId).where(sql`${table.status} = 'PENDING'`),
+  index("risk_reviews_case_idx").on(table.riskCaseId)
+]);
+
+export const riskReviewApprovals = pgTable("risk_review_approvals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  reviewId: uuid("review_id").notNull().references(() => riskReviews.id, { onDelete: "restrict" }),
+  adminAccountId: uuid("admin_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  decision: text("decision").notNull(),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("risk_review_approvals_decision_check", sql.raw("decision IN ('APPROVED', 'REJECTED')")),
+  uniqueIndex("risk_review_approvals_admin_unique").on(table.reviewId, table.adminAccountId),
+  uniqueIndex("risk_review_approvals_idempotency_unique").on(table.reviewId, table.idempotencyKey)
+]);
+
+export const riskFinancialHandoffs = pgTable("risk_financial_handoffs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  riskCaseId: uuid("risk_case_id").notNull().references(() => riskHolds.id, { onDelete: "restrict" }),
+  reviewId: uuid("review_id").notNull().references(() => riskReviews.id, { onDelete: "restrict" }),
+  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "restrict" }),
+  outcome: text("outcome").notNull().default("BUYER_REFUND"),
+  buyerAmount: integer("buyer_amount").notNull(),
+  currency: text("currency").notNull().default("IDR"),
+  buyerDestinationBindingId: uuid("buyer_destination_binding_id").notNull(),
+  calculationHash: text("calculation_hash").notNull(),
+  evidenceReference: text("evidence_reference").notNull(),
+  evidenceHash: text("evidence_hash").notNull(),
+  sourceState: transactionState("source_state").notNull(),
+  sourceStateVersion: integer("source_state_version").notNull(),
+  approvedAt: timestamp("approved_at", { withTimezone: true }).notNull(),
+  consumedByOperationId: uuid("consumed_by_operation_id"),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("risk_handoffs_outcome_check", sql.raw("outcome = 'BUYER_REFUND'")),
+  check("risk_handoffs_amount_currency_check", sql.raw("buyer_amount > 0 AND currency = 'IDR'")),
+  check("risk_handoffs_consumption_check", sql.raw("(consumed_by_operation_id IS NULL) = (consumed_at IS NULL)")),
+  uniqueIndex("risk_handoffs_review_unique").on(table.reviewId),
+  uniqueIndex("risk_handoffs_case_unique").on(table.riskCaseId),
+  index("risk_handoffs_transaction_idx").on(table.transactionId)
+]);
+
+export const releaseGates = pgTable("release_gates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gateKey: text("gate_key").notNull(),
+  status: text("status").notNull().default("OPEN"),
+  stateVersion: integer("state_version").notNull().default(0),
+  currentReviewId: uuid("current_review_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("release_gates_key_check", sql.raw("gate_key = 'REAL_MONEY_PILOT'")),
+  check("release_gates_status_check", sql.raw("status IN ('OPEN', 'BLOCKED', 'APPROVED')")),
+  check("release_gates_version_check", sql.raw("state_version >= 0")),
+  uniqueIndex("release_gates_key_unique").on(table.gateKey)
+]);
+
+export const releaseGateItems = pgTable("release_gate_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gateId: uuid("gate_id").notNull().references(() => releaseGates.id, { onDelete: "restrict" }),
+  itemKey: text("item_key").notNull(),
+  status: text("status").notNull().default("OPEN"),
+  currentEventId: uuid("current_event_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("release_gate_items_key_check", sql.raw("item_key IN ('MIDTRANS_SETTLEMENT', 'CUSTODY_FORWARDING', 'CONSUMER_DISCLOSURE', 'COMPLAINT_HANDLING', 'DATA_CONTROLS', 'PRODUCTION_CREDENTIALS_WEBHOOK', 'REAL_MONEY_PILOT_EVIDENCE', 'LEGAL_COMPLIANCE')")),
+  check("release_gate_items_status_check", sql.raw("status IN ('OPEN', 'BLOCKED', 'APPROVED')")),
+  uniqueIndex("release_gate_items_key_unique").on(table.gateId, table.itemKey)
+]);
+
+export const releaseGateItemEvents = pgTable("release_gate_item_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  itemId: uuid("item_id").notNull().references(() => releaseGateItems.id, { onDelete: "restrict" }),
+  status: text("status").notNull(),
+  evidenceReference: text("evidence_reference").notNull(),
+  externalApproverReference: text("external_approver_reference"),
+  correctedEventId: uuid("corrected_event_id"),
+  correctionReason: text("correction_reason"),
+  actorAccountId: uuid("actor_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("release_gate_item_events_status_check", sql.raw("status IN ('OPEN', 'BLOCKED', 'APPROVED')")),
+  check("release_gate_item_events_correction_check", sql.raw("(corrected_event_id IS NULL) = (correction_reason IS NULL)")),
+  foreignKey({ columns: [table.correctedEventId], foreignColumns: [table.id] }).onDelete("restrict"),
+  uniqueIndex("release_gate_item_events_idempotency_unique").on(table.itemId, table.idempotencyKey)
+]);
+
+export const releaseGateReviews = pgTable("release_gate_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gateId: uuid("gate_id").notNull().references(() => releaseGates.id, { onDelete: "restrict" }),
+  resultingStatus: text("resulting_status").notNull(),
+  externalDecisionReference: text("external_decision_reference"),
+  actorAccountId: uuid("actor_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  gateVersion: integer("gate_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("release_gate_reviews_status_check", sql.raw("resulting_status IN ('OPEN', 'BLOCKED', 'APPROVED')")),
+  check("release_gate_reviews_approval_reference_check", sql.raw("resulting_status <> 'APPROVED' OR NULLIF(BTRIM(external_decision_reference), '') IS NOT NULL")),
+  uniqueIndex("release_gate_reviews_idempotency_unique").on(table.gateId, table.idempotencyKey)
+]);
 
 export const financialOperations = pgTable(
   "financial_operations",
