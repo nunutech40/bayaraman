@@ -27,10 +27,19 @@ type PaymentData = {
   state: "WAITING_BUYER_PAYMENT";
   stateVersion: number;
 };
+type ComplaintSummary = {
+  transactionId: string;
+  status: "HOLD_ACTIVE" | "MANUAL_REVIEW" | "AGREEMENT_RECORDED" | "POST_PROCESSING_RECORDED";
+  summary: string;
+  nextResponsibleActor: string;
+  recordedAt: string;
+  updatedAt: string;
+};
 
 export function TransactionStatus({ transactionId }: { transactionId: string }) {
   const [data, setData] = useState<TransactionData | null>(null);
   const [payment, setPayment] = useState<PaymentData | null>(null);
+  const [complaint, setComplaint] = useState<ComplaintSummary | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [role, setRole] = useState<Role>("BUYER");
@@ -44,6 +53,8 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
     }
     const result = await response.json() as TransactionData;
     setData(result);
+    const complaintResponse = await fetch(`/api/transactions/${transactionId}/complaint`, { cache: "no-store" });
+    setComplaint(complaintResponse.ok ? await complaintResponse.json() as ComplaintSummary | null : null);
     if (result.state === "WAITING_BUYER_PAYMENT") {
       const paymentResponse = await fetch(`/api/transactions/${transactionId}/payment-status`);
       setPayment(paymentResponse.ok ? await paymentResponse.json() as PaymentData : null);
@@ -121,6 +132,13 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
             <ul className="participant-list">
               {data.participants.map((participant) => <li key={participant.role}><strong>{participant.role}</strong> · {participant.name} · {participant.joined ? "sudah bergabung" : "menunggu"}</li>)}
             </ul>
+            {complaint && (
+              <div className="complaint-summary" role="status">
+                <p className="section-label">Status complaint · {complaint.status}</p>
+                <p>{complaint.summary}</p>
+                <p className="muted">Tindakan berikutnya: {complaint.nextResponsibleActor}. Evidence dan keputusan internal Admin tidak ditampilkan.</p>
+              </div>
+            )}
 
             {data.currentRole && data.state === "WAITING_COUNTERPARTY_DATA" && (
               <div className="role-data-panel">

@@ -53,7 +53,10 @@ async function lockTransaction(tx: any, transactionId: string) {
 }
 
 async function assertNoHold(tx: any, transactionId: string): Promise<void> {
-  const [complaint] = await tx.select({ id: complaintHolds.id }).from(complaintHolds).where(eq(complaintHolds.transactionId, transactionId)).limit(1);
+  const [complaint] = await tx.select({ id: complaintHolds.id }).from(complaintHolds).where(and(
+    eq(complaintHolds.transactionId, transactionId),
+    eq(complaintHolds.active, true)
+  )).limit(1);
   const [risk] = await tx.select({ id: riskHolds.id }).from(riskHolds).where(eq(riskHolds.transactionId, transactionId)).limit(1);
   if (complaint || risk) throw new Error("CONFIRMATION_HOLD");
 }

@@ -88,6 +88,17 @@ textarea {
   resize: vertical;
 }
 
+select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
 input {
   width: 100%;
   min-height: 2.75rem;
@@ -194,6 +205,17 @@ button:disabled {
   margin-top: 1.5rem;
   color: #16794a;
   font-weight: 700;
+}
+
+.complaint-summary {
+  margin-top: 1rem;
+  padding: 1rem 0;
+  border-block: 1px solid var(--line);
+}
+
+.complaint-summary p {
+  margin: 0.4rem 0;
+  line-height: 1.5;
 }
 
 .payment-panel {
