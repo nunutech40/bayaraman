@@ -558,14 +558,36 @@ export const cancellationRequests = pgTable(
     cause: text("cause").notNull(),
     note: text("note"),
     status: text("status").notNull().default("ACTIVE"),
+    lifecycle: text("lifecycle").notNull().default("ACTIVE"),
+    decision: text("decision"),
+    delegationType: text("delegation_type").notNull().default("NONE"),
+    delegationStatus: text("delegation_status").notNull().default("NOT_REQUIRED"),
+    priorState: transactionState("prior_state").notNull(),
+    paymentReconciliationId: uuid("payment_reconciliation_id").references(() => paymentReconciliations.id, { onDelete: "restrict" }),
+    complaintCaseId: uuid("complaint_case_id"),
+    riskCaseId: uuid("risk_case_id"),
+    responseDeadlineAt: timestamp("response_deadline_at", { withTimezone: true }),
+    manualReviewReason: text("manual_review_reason"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
     stateVersion: integer("state_version").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [
-    check("other_manual_review_requires_note", sql.raw("cause <> 'OTHER_MANUAL_REVIEW' OR note IS NOT NULL")),
+    check("cancellation_requests_cause_check", sql.raw("cause IN ('BUYER_CHANGE_OF_MIND', 'SELLER_UNABLE_TO_FULFILL', 'MUTUAL_NEUTRAL', 'BAYARAMAN_ERROR', 'PROHIBITED_OR_POLICY', 'SUSPECTED_FRAUD', 'OTHER_MANUAL_REVIEW')")),
+    check("other_manual_review_requires_note", sql.raw("cause <> 'OTHER_MANUAL_REVIEW' OR NULLIF(BTRIM(note), '') IS NOT NULL")),
+    check("cancellation_requests_status_check", sql.raw("status IN ('ACTIVE', 'CLOSED')")),
+    check("cancellation_requests_lifecycle_check", sql.raw("lifecycle IN ('ACTIVE', 'WITHDRAWN', 'REJECTED', 'RESOLVED', 'REFERRED_TO_COMPLAINT', 'REFERRED_TO_RISK')")),
+    check("cancellation_requests_decision_check", sql.raw("decision IS NULL OR decision IN ('DIRECT_CANCELLED', 'DEFINITIVE_NON_PAID', 'FUNDED_REVIEW', 'REFUND_APPROVED', 'LATE_FUND_REFUND', 'COMPLAINT_HANDOFF', 'RISK_HANDOFF', 'MANUAL_REVIEW')")),
+    check("cancellation_requests_delegation_type_check", sql.raw("delegation_type IN ('NONE', 'COMPLAINT', 'RISK')")),
+    check("cancellation_requests_delegation_status_check", sql.raw("delegation_status IN ('NOT_REQUIRED', 'REQUIRED', 'REFERRED')")),
+    check("cancellation_requests_risk_required_check", sql.raw("NOT (delegation_type = 'RISK' AND delegation_status = 'REQUIRED') OR (status = 'ACTIVE' AND resolved_at IS NULL)")),
+    check("cancellation_requests_risk_referred_check", sql.raw("NOT (delegation_type = 'RISK' AND delegation_status = 'REFERRED') OR (status = 'CLOSED' AND lifecycle = 'REFERRED_TO_RISK' AND risk_case_id IS NOT NULL AND resolved_at IS NOT NULL)")),
+    check("cancellation_requests_complaint_referred_check", sql.raw("NOT (delegation_type = 'COMPLAINT' AND delegation_status = 'REFERRED') OR (status = 'CLOSED' AND lifecycle = 'REFERRED_TO_COMPLAINT' AND complaint_case_id IS NOT NULL AND resolved_at IS NOT NULL)")),
+    check("cancellation_requests_direct_nonrisk_check", sql.raw("NOT (decision = 'DIRECT_CANCELLED' AND delegation_type <> 'RISK') OR (status = 'CLOSED' AND lifecycle = 'RESOLVED' AND resolved_at IS NOT NULL)")),
     uniqueIndex("cancellation_requests_one_active_idx")
       .on(table.transactionId)
-      .where(sql`${table.status} = 'ACTIVE'`)
+      .where(sql`${table.status} = 'ACTIVE'`),
+    index("cancellation_requests_payment_reconciliation_idx").on(table.paymentReconciliationId)
   ]
 );
 
@@ -573,15 +595,163 @@ export const cancellationReconciliations = pgTable(
   "cancellation_reconciliations",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    cancellationRequestId: uuid("cancellation_request_id").notNull().references(() => cancellationRequests.id, { onDelete: "cascade" }),
-    bankResult: text("bank_result"),
+    cancellationRequestId: uuid("cancellation_request_id").notNull().references(() => cancellationRequests.id, { onDelete: "restrict" }),
+    paymentReconciliationId: uuid("payment_reconciliation_id").notNull().references(() => paymentReconciliations.id, { onDelete: "restrict" }),
+    status: text("status").notNull().default("OPEN"),
+    classification: text("classification"),
+    providerEventId: uuid("provider_event_id").references(() => paymentProviderEvents.id, { onDelete: "restrict" }),
     evidenceReference: text("evidence_reference"),
     reconciledByAccountId: uuid("reconciled_by_account_id").references(() => accounts.id),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
-    completedAt: timestamp("completed_at", { withTimezone: true })
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
-  (table) => [uniqueIndex("cancellation_reconciliation_request_unique").on(table.cancellationRequestId)]
+  (table) => [
+    uniqueIndex("cancellation_reconciliation_request_unique").on(table.cancellationRequestId),
+    check("cancellation_reconciliations_status_check", sql.raw("status IN ('OPEN', 'RESOLVED', 'TIMED_OUT')")),
+    check("cancellation_reconciliations_classification_check", sql.raw("classification IS NULL OR classification IN ('AUTHORITATIVE', 'DEFINITIVE_NON_PAID', 'WAITING', 'MISMATCH', 'UNKNOWN')")),
+    index("cancellation_reconciliations_payment_idx").on(table.paymentReconciliationId)
+  ]
 );
+
+export const cancellationEvents = pgTable("cancellation_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  cancellationRequestId: uuid("cancellation_request_id").notNull().references(() => cancellationRequests.id, { onDelete: "restrict" }),
+  eventType: text("event_type").notNull(),
+  actorAccountId: uuid("actor_account_id").references(() => accounts.id, { onDelete: "restrict" }),
+  summary: text("summary").notNull(),
+  evidenceReference: text("evidence_reference"),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("cancellation_events_type_check", sql.raw("event_type IN ('REQUESTED', 'EVIDENCE_CORRECTED', 'WITHDRAWN', 'REJECTED', 'INVITATION_REVOKED', 'INVOICE_RETIRED', 'RECONCILIATION_LINKED', 'PROVIDER_RESULT_RECORDED', 'WA_REQUEST_RECORDED', 'PARTICIPANT_RESPONSE_RECORDED', 'SELLER_SHIPMENT_RECORDED', 'RESPONSE_TIMEOUT_RECORDED', 'RECONCILIATION_TIMEOUT_RECORDED', 'MANUAL_REVIEW_RECOVERY_RECORDED', 'REFUND_CALCULATION_PROPOSED', 'REFUND_CALCULATION_APPROVED', 'REFUND_CALCULATION_REJECTED', 'COMPLAINT_HANDOFF_REQUIRED', 'COMPLAINT_HANDOFF_RECORDED', 'RISK_HANDOFF_REQUIRED', 'RISK_HANDOFF_RECORDED', 'FINANCIAL_HANDOFF_CREATED', 'HANDOFF_CLAIMED')")),
+  uniqueIndex("cancellation_events_request_idempotency_unique").on(table.cancellationRequestId, table.idempotencyKey),
+  index("cancellation_events_request_idx").on(table.cancellationRequestId)
+]);
+
+export const cancellationEvidence = pgTable("cancellation_evidence", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  cancellationRequestId: uuid("cancellation_request_id").notNull().references(() => cancellationRequests.id, { onDelete: "restrict" }),
+  evidenceKey: text("evidence_key").notNull(),
+  sourceAuthorRole: text("source_author_role").notNull(),
+  sourceAccountId: uuid("source_account_id").references(() => accounts.id, { onDelete: "restrict" }),
+  evidenceReference: text("evidence_reference").notNull(),
+  messageReference: text("message_reference"),
+  snapshotHash: text("snapshot_hash").notNull(),
+  deliveryResult: text("delivery_result").notNull(),
+  responseValue: text("response_value"),
+  correctedEvidenceId: uuid("corrected_evidence_id"),
+  correctionReason: text("correction_reason"),
+  recordedByAccountId: uuid("recorded_by_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("cancellation_evidence_key_check", sql.raw("evidence_key IN ('WA_REQUEST', 'SELLER_SHIPMENT', 'BUYER_RESPONSE', 'SELLER_RESPONSE')")),
+  check("cancellation_evidence_author_role_check", sql.raw("source_author_role IN ('BUYER', 'SELLER', 'ADMIN')")),
+  check("cancellation_evidence_delivery_check", sql.raw("delivery_result IN ('PENDING', 'SENT', 'FAILED', 'UNKNOWN')")),
+  check("cancellation_evidence_correction_check", sql.raw("(corrected_evidence_id IS NULL) = (correction_reason IS NULL)")),
+  foreignKey({ columns: [table.correctedEvidenceId], foreignColumns: [table.id] }).onDelete("restrict"),
+  uniqueIndex("cancellation_evidence_request_idempotency_unique").on(table.cancellationRequestId, table.idempotencyKey),
+  index("cancellation_evidence_request_idx").on(table.cancellationRequestId)
+]);
+
+export const cancellationEvidenceHeads = pgTable("cancellation_evidence_heads", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  cancellationRequestId: uuid("cancellation_request_id").notNull().references(() => cancellationRequests.id, { onDelete: "restrict" }),
+  evidenceKey: text("evidence_key").notNull(),
+  currentEvidenceId: uuid("current_evidence_id").notNull().references(() => cancellationEvidence.id, { onDelete: "restrict" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  uniqueIndex("cancellation_evidence_heads_request_key_unique").on(table.cancellationRequestId, table.evidenceKey),
+  uniqueIndex("cancellation_evidence_heads_current_unique").on(table.currentEvidenceId)
+]);
+
+export const cancellationProviderResolutions = pgTable("cancellation_provider_resolutions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "restrict" }),
+  cancellationRequestId: uuid("cancellation_request_id").references(() => cancellationRequests.id, { onDelete: "restrict" }),
+  paymentReconciliationId: uuid("payment_reconciliation_id").notNull().references(() => paymentReconciliations.id, { onDelete: "restrict" }),
+  providerEventId: uuid("provider_event_id").notNull().references(() => paymentProviderEvents.id, { onDelete: "restrict" }),
+  source: text("source").notNull(),
+  classification: text("classification").notNull(),
+  outcomeState: transactionState("outcome_state").notNull(),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("cancellation_provider_resolutions_source_check", sql.raw("source IN ('WEBHOOK', 'GET_STATUS', 'ADMIN_RECOVERY')")),
+  check("cancellation_provider_resolutions_classification_check", sql.raw("classification IN ('AUTHORITATIVE', 'DEFINITIVE_NON_PAID', 'WAITING', 'MISMATCH', 'UNKNOWN')")),
+  uniqueIndex("cancellation_provider_resolutions_event_unique").on(table.providerEventId),
+  uniqueIndex("cancellation_provider_resolutions_idempotency_unique").on(table.paymentReconciliationId, table.idempotencyKey)
+]);
+
+export const cancellationRefundCalculations = pgTable("cancellation_refund_calculations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  cancellationRequestId: uuid("cancellation_request_id").notNull().references(() => cancellationRequests.id, { onDelete: "restrict" }),
+  version: integer("version").notNull(),
+  status: text("status").notNull().default("PENDING"),
+  buyerAmount: integer("buyer_amount").notNull(),
+  currency: text("currency").notNull().default("IDR"),
+  calculationHash: text("calculation_hash").notNull(),
+  evidenceSnapshotHash: text("evidence_snapshot_hash").notNull(),
+  buyerDestinationBindingId: uuid("buyer_destination_binding_id").notNull(),
+  proposedByAccountId: uuid("proposed_by_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  decidedAt: timestamp("decided_at", { withTimezone: true })
+}, (table) => [
+  check("cancellation_refund_calculations_status_check", sql.raw("status IN ('PENDING', 'APPROVED', 'REJECTED')")),
+  check("cancellation_refund_calculations_amount_check", sql.raw("buyer_amount > 0 AND currency = 'IDR'")),
+  uniqueIndex("cancellation_refund_calculations_request_version_unique").on(table.cancellationRequestId, table.version),
+  uniqueIndex("cancellation_refund_calculations_one_pending_unique").on(table.cancellationRequestId).where(sql`${table.status} = 'PENDING'`)
+]);
+
+export const cancellationRefundApprovals = pgTable("cancellation_refund_approvals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  calculationId: uuid("calculation_id").notNull().references(() => cancellationRefundCalculations.id, { onDelete: "restrict" }),
+  adminAccountId: uuid("admin_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  decision: text("decision").notNull(),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("cancellation_refund_approvals_decision_check", sql.raw("decision IN ('APPROVED', 'REJECTED')")),
+  uniqueIndex("cancellation_refund_approvals_admin_unique").on(table.calculationId, table.adminAccountId),
+  uniqueIndex("cancellation_refund_approvals_idempotency_unique").on(table.calculationId, table.idempotencyKey)
+]);
+
+export const cancellationFinancialHandoffs = pgTable("cancellation_financial_handoffs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "restrict" }),
+  cancellationRequestId: uuid("cancellation_request_id").references(() => cancellationRequests.id, { onDelete: "restrict" }),
+  paymentReconciliationId: uuid("payment_reconciliation_id").references(() => paymentReconciliations.id, { onDelete: "restrict" }),
+  providerEventId: uuid("provider_event_id").notNull().references(() => paymentProviderEvents.id, { onDelete: "restrict" }),
+  sourceType: text("source_type").notNull(),
+  buyerAmount: integer("buyer_amount").notNull(),
+  currency: text("currency").notNull().default("IDR"),
+  buyerAccountId: uuid("buyer_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  calculationId: uuid("calculation_id").references(() => cancellationRefundCalculations.id, { onDelete: "restrict" }),
+  sourceHash: text("source_hash").notNull(),
+  evidenceReference: text("evidence_reference").notNull(),
+  evidenceHash: text("evidence_hash").notNull(),
+  providerOrderId: text("provider_order_id").notNull(),
+  sourceState: transactionState("source_state").notNull(),
+  sourceStateVersion: integer("source_state_version").notNull(),
+  sourceFinalizedAt: timestamp("source_finalized_at", { withTimezone: true }).notNull(),
+  consumedByOperationId: uuid("consumed_by_operation_id").references(() => financialOperations.id, { onDelete: "restrict" }),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("cancellation_financial_handoffs_source_type_check", sql.raw("source_type IN ('FUNDED_CANCELLATION', 'LATE_FUND')")),
+  check("cancellation_financial_handoffs_amount_check", sql.raw("buyer_amount > 0 AND currency = 'IDR'")),
+  check("cancellation_financial_handoffs_source_state_check", sql.raw("source_state = 'REFUND_READY'")),
+  check("cancellation_financial_handoffs_source_fields_check", sql.raw("(source_type = 'FUNDED_CANCELLATION' AND cancellation_request_id IS NOT NULL AND calculation_id IS NOT NULL) OR (source_type = 'LATE_FUND' AND calculation_id IS NULL AND payment_reconciliation_id IS NOT NULL)")),
+  check("cancellation_financial_handoffs_consumption_check", sql.raw("(consumed_by_operation_id IS NULL) = (consumed_at IS NULL)")),
+  uniqueIndex("cancellation_financial_handoffs_provider_event_unique").on(table.providerEventId),
+  uniqueIndex("cancellation_financial_handoffs_calculation_unique").on(table.calculationId).where(sql`${table.calculationId} IS NOT NULL`),
+  index("cancellation_financial_handoffs_transaction_idx").on(table.transactionId)
+]);
 
 export const adminTaskAssignments = pgTable("admin_task_assignments", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -591,7 +761,7 @@ export const adminTaskAssignments = pgTable("admin_task_assignments", {
   assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
   revokedAt: timestamp("revoked_at", { withTimezone: true })
 }, (table) => [
-  check("admin_task_assignments_scope_check", sql.raw("task_scope IN ('COMPLAINT_INTAKE', 'COMPLAINT_APPROVAL', 'RISK_INTAKE', 'RISK_APPROVAL', 'RELEASE_GATE_REVIEW')")),
+  check("admin_task_assignments_scope_check", sql.raw("task_scope IN ('COMPLAINT_INTAKE', 'COMPLAINT_APPROVAL', 'RISK_INTAKE', 'RISK_APPROVAL', 'RELEASE_GATE_REVIEW', 'CANCELLATION_RECONCILIATION', 'CANCELLATION_EVIDENCE', 'CANCELLATION_APPROVAL')")),
   uniqueIndex("admin_task_assignments_active_scope_unique")
     .on(table.accountId, table.taskScope)
     .where(sql`${table.revokedAt} IS NULL`)

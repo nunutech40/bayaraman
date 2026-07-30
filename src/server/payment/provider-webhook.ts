@@ -10,6 +10,7 @@ import {
   transactions
 } from "@/server/db/schema";
 import { recordTransactionEvent } from "@/server/transaction/audit";
+import { processProviderEvent } from "@/server/payment/process-provider-event";
 import {
   deterministicProviderEventId,
   payloadHash,
@@ -142,6 +143,25 @@ export async function ingestMidtransWebhook(input: unknown) {
     if (!event) throw new Error("MIDTRANS_EVENT_PERSIST_FAILED");
 
     const transaction = invoice ? (await tx.select().from(transactions).where(eq(transactions.id, invoice.transactionId)).limit(1))[0] : undefined;
+    if (invoice && transaction) {
+      const cancellationResult = await processProviderEvent(tx, {
+        transactionId: transaction.id,
+        invoiceId: invoice.id,
+        providerEventId: event.id,
+        source: "WEBHOOK",
+        correlationId,
+        idempotencyKey: `webhook-cancellation:${event.id}`
+      });
+      if (cancellationResult) {
+        return {
+          kind: "recorded" as const,
+          eventId: event.id,
+          transactionId: transaction.id,
+          authoritative: false,
+          cancellationResult
+        };
+      }
+    }
     const authoritative = outcome === "ACCEPTED" && invoice && transaction
       && transaction.state === "WAITING_BUYER_PAYMENT"
       && invoice.isActive

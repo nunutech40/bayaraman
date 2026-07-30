@@ -35,14 +35,33 @@ type ComplaintSummary = {
   recordedAt: string;
   updatedAt: string;
 };
+type CancellationSummary = {
+  state: string;
+  stateVersion: number;
+  cancellation: {
+    id: string;
+    ownRequest: boolean;
+    cause: string;
+    status: string;
+    lifecycle: string;
+    decision: string | null;
+    delegationType: string;
+    delegationStatus: string;
+    responseDeadlineAt: string | null;
+    manualReviewReason: string | null;
+  } | null;
+};
 
 export function TransactionStatus({ transactionId }: { transactionId: string }) {
   const [data, setData] = useState<TransactionData | null>(null);
   const [payment, setPayment] = useState<PaymentData | null>(null);
   const [complaint, setComplaint] = useState<ComplaintSummary | null>(null);
+  const [cancellation, setCancellation] = useState<CancellationSummary | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [role, setRole] = useState<Role>("BUYER");
+  const [cancelCause, setCancelCause] = useState("BUYER_CHANGE_OF_MIND");
+  const [cancelNote, setCancelNote] = useState("");
   const [form, setForm] = useState({ recipientName: "", addressLine: "", district: "", city: "", province: "", postalCode: "", bankName: "", accountHolderName: "", accountNumber: "" });
 
   const load = useCallback(async () => {
@@ -55,6 +74,8 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
     setData(result);
     const complaintResponse = await fetch(`/api/transactions/${transactionId}/complaint`, { cache: "no-store" });
     setComplaint(complaintResponse.ok ? await complaintResponse.json() as ComplaintSummary | null : null);
+    const cancellationResponse = await fetch(`/api/transactions/${transactionId}/cancellation`, { cache: "no-store" });
+    setCancellation(cancellationResponse.ok ? await cancellationResponse.json() as CancellationSummary : null);
     if (result.state === "WAITING_BUYER_PAYMENT") {
       const paymentResponse = await fetch(`/api/transactions/${transactionId}/payment-status`);
       setPayment(paymentResponse.ok ? await paymentResponse.json() as PaymentData : null);
@@ -120,6 +141,28 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
     await load();
   }
 
+  async function requestCancellation() {
+    if (!data) return;
+    setBusy(true);
+    setMessage("");
+    const response = await fetch(`/api/transactions/${transactionId}/cancellation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({
+        cause: cancelCause,
+        note: cancelCause === "OTHER_MANUAL_REVIEW" ? cancelNote : undefined,
+        expectedStateVersion: data.stateVersion
+      })
+    });
+    const result = await response.json() as { message?: string };
+    setBusy(false);
+    if (!response.ok) {
+      setMessage(result.message ?? "Pembatalan belum dapat diproses.");
+      return;
+    }
+    await load();
+  }
+
   return (
     <main className="app-shell">
       <section className="surface" aria-labelledby="status-title">
@@ -137,6 +180,22 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
                 <p className="section-label">Status complaint · {complaint.status}</p>
                 <p>{complaint.summary}</p>
                 <p className="muted">Tindakan berikutnya: {complaint.nextResponsibleActor}. Evidence dan keputusan internal Admin tidak ditampilkan.</p>
+              </div>
+            )}
+            {cancellation?.cancellation && (
+              <div className="complaint-summary" role="status">
+                <p className="section-label">Pembatalan · {cancellation.cancellation.status}</p>
+                <p>{cancellation.cancellation.cause}</p>
+                <p className="muted">
+                  {cancellation.cancellation.delegationStatus === "REQUIRED"
+                    ? "Menunggu penanganan Admin."
+                    : `Tahap: ${cancellation.cancellation.lifecycle}`}
+                </p>
+                {cancellation.cancellation.responseDeadlineAt && (
+                  <p className="muted">
+                    Batas respons: {new Date(cancellation.cancellation.responseDeadlineAt).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB
+                  </p>
+                )}
               </div>
             )}
 
@@ -178,6 +237,38 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
                   <button type="button" className="secondary-button" onClick={refreshPaymentStatus} disabled={busy}>{busy ? "Memuat..." : "Cek status pembayaran"}</button>
                 </div>
                 <p className="muted">Status pembayaran menjadi authoritative setelah rekonsiliasi Midtrans pada tahap berikutnya.</p>
+              </div>
+            )}
+            {!cancellation?.cancellation && [
+              "WAITING_COUNTERPARTY",
+              "WAITING_COUNTERPARTY_DATA",
+              "WAITING_BUYER_PAYMENT",
+              "PAYMENT_UNDER_REVIEW",
+              "PAYMENT_EXCEPTION_REVIEW",
+              "PAYMENT_CONFIRMED",
+              "READY_FOR_FULFILLMENT"
+            ].includes(data.state) && (
+              <div className="role-data-panel">
+                <p className="section-label">Ajukan pembatalan</p>
+                <label>Alasan
+                  <select value={cancelCause} onChange={(event) => setCancelCause(event.target.value)}>
+                    <option value="BUYER_CHANGE_OF_MIND">Buyer berubah pikiran</option>
+                    <option value="SELLER_UNABLE_TO_FULFILL">Seller tidak dapat memenuhi</option>
+                    <option value="MUTUAL_NEUTRAL">Kesepakatan bersama</option>
+                    <option value="BAYARAMAN_ERROR">Kesalahan BayarAman</option>
+                    <option value="PROHIBITED_OR_POLICY">Barang/kebijakan terlarang</option>
+                    <option value="SUSPECTED_FRAUD">Dugaan fraud</option>
+                    <option value="OTHER_MANUAL_REVIEW">Perlu review manual</option>
+                  </select>
+                </label>
+                {cancelCause === "OTHER_MANUAL_REVIEW" && (
+                  <label>Catatan
+                    <input value={cancelNote} onChange={(event) => setCancelNote(event.target.value)} />
+                  </label>
+                )}
+                <button type="button" className="secondary-button" onClick={requestCancellation} disabled={busy}>
+                  {busy ? "Memproses..." : "Ajukan pembatalan"}
+                </button>
               </div>
             )}
             {message && <p className="form-error" role="alert">{message}</p>}

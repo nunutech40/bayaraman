@@ -10,8 +10,10 @@ import {
 } from "@/server/db/schema";
 import { findIdempotentResult, saveIdempotentResult } from "@/server/transaction/mutation";
 import { recordTransactionEvent } from "@/server/transaction/audit";
+import { processProviderEvent } from "@/server/payment/process-provider-event";
 import { isAuthoritativePayment, type PaymentStatusAdapter } from "@/server/providers/payment-status";
 import { MidtransPaymentStatusAdapter } from "@/server/providers/midtrans/status";
+import { ensurePaymentReconciliation } from "./reconciliation-repository";
 
 const COMMAND = "MIDTRANS_PAYMENT_RECONCILIATION";
 
@@ -20,7 +22,8 @@ export async function reconcileMidtransStatus(
   transactionId: string,
   expectedStateVersion: number | undefined,
   idempotency: { key: string; requestHash: string },
-  adapter: PaymentStatusAdapter = new MidtransPaymentStatusAdapter()
+  adapter: PaymentStatusAdapter = new MidtransPaymentStatusAdapter(),
+  cancellationSource: "GET_STATUS" | "ADMIN_RECOVERY" = "GET_STATUS"
 ) {
   return db.transaction(async (tx) => {
     const prior = await findIdempotentResult(tx, adminId, COMMAND, idempotency.key, idempotency.requestHash);
@@ -32,10 +35,17 @@ export async function reconcileMidtransStatus(
     if (expectedStateVersion !== undefined && transaction.stateVersion !== expectedStateVersion) {
       throw new Error("STATE_VERSION_CONFLICT");
     }
-    const [invoice] = await tx.select().from(paymentInvoices).where(and(
-      eq(paymentInvoices.transactionId, transactionId),
-      eq(paymentInvoices.isActive, true)
-    )).orderBy(desc(paymentInvoices.createdAt)).limit(1);
+    const invoices = await tx.select().from(paymentInvoices)
+      .where(eq(paymentInvoices.transactionId, transactionId))
+      .orderBy(desc(paymentInvoices.createdAt));
+    const invoice = invoices.find((candidate) => candidate.isActive) ??
+      ([
+        "CANCELLATION_PENDING_RECONCILIATION",
+        "PAYMENT_UNDER_REVIEW",
+        "PAYMENT_EXCEPTION_REVIEW",
+        "PAYMENT_EXPIRED",
+        "CANCELLED"
+      ].includes(transaction.state) ? invoices[0] : undefined);
     if (!invoice) throw new Error("PAYMENT_INVOICE_NOT_READY");
 
     const status = await adapter.getStatus(invoice.providerOrderId);
@@ -79,6 +89,27 @@ export async function reconcileMidtransStatus(
       validationOutcome: outcome
     }).returning())[0];
     if (!event) throw new Error("MIDTRANS_EVENT_PERSIST_FAILED");
+
+    const cancellationResult = await processProviderEvent(tx, {
+      transactionId,
+      invoiceId: invoice.id,
+      providerEventId: event.id,
+      source: cancellationSource,
+      correlationId: randomUUID(),
+      idempotencyKey: `${COMMAND}:cancellation:${idempotency.key}`
+    });
+    if (cancellationResult) {
+      const result = {
+        transactionId,
+        eventId: event.id,
+        providerStatus: status.transactionStatus,
+        validationOutcome: outcome,
+        authoritative: false,
+        cancellationResult
+      };
+      await saveIdempotentResult(tx, adminId, COMMAND, idempotency.key, idempotency.requestHash, result);
+      return result;
+    }
 
     let result: Record<string, unknown> = {
       transactionId,
@@ -170,23 +201,5 @@ export async function ensureReconciliation(
   decisionCode: "PROVIDER_STATUS_REVIEW" | "LATE_FUND_HANDOFF" | "CONTROLLED_EXCEPTION_HANDOFF",
   _correlationId: string
 ) {
-  if (!invoiceId) throw new Error("RECONCILIATION_INVOICE_REQUIRED");
-  const [invoice] = await tx.select().from(paymentInvoices).where(eq(paymentInvoices.id, invoiceId)).limit(1);
-  if (!invoice) throw new Error("RECONCILIATION_INVOICE_NOT_FOUND");
-  const [existing] = await tx.select().from(paymentReconciliations).where(and(
-    eq(paymentReconciliations.invoiceId, invoiceId),
-    sql`completed_at IS NULL`
-  )).orderBy(desc(paymentReconciliations.createdAt)).limit(1);
-  if (existing) return existing;
-  const [created] = await tx.insert(paymentReconciliations).values({
-    transactionId: invoice.transactionId,
-    invoiceId,
-    decision: decisionCode,
-    decisionCode,
-    providerStatusReference: invoice.providerOrderId,
-    deadlineAt: invoice.deadlineAt,
-    result: "UNKNOWN"
-  }).returning();
-  if (!created) throw new Error("RECONCILIATION_CREATE_FAILED");
-  return created;
+  return ensurePaymentReconciliation(tx, invoiceId, decisionCode);
 }

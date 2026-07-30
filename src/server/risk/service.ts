@@ -138,6 +138,17 @@ async function appendEvent(tx: any, input: {
 }
 
 async function recordOnlyOwner(tx: any, transactionId: string, state: string) {
+  const [cancellationOwner] = await tx.select({ id: cancellationRequests.id })
+    .from(cancellationRequests)
+    .where(and(
+      eq(cancellationRequests.transactionId, transactionId),
+      eq(cancellationRequests.status, "ACTIVE"),
+      eq(cancellationRequests.delegationType, "RISK"),
+      eq(cancellationRequests.delegationStatus, "REQUIRED")
+    )).limit(1);
+  if (cancellationOwner) {
+    return { sourceOwnerType: "CANCELLATION_CASE", sourceOwnerId: cancellationOwner.id };
+  }
   if (state === "PAYOUT_ON_HOLD") {
     const [owner] = await tx.select({ id: complaintHolds.id }).from(complaintHolds)
       .where(and(eq(complaintHolds.transactionId, transactionId), eq(complaintHolds.active, true))).limit(1);
@@ -213,6 +224,16 @@ export async function recordRisk(
       if (prior) return prior;
       const transaction = await lockTransaction(tx, transactionId);
       assertVersion(transaction.stateVersion, input.expectedStateVersion);
+      const [cancellationOwner] = await tx.select().from(cancellationRequests)
+        .where(and(
+          eq(cancellationRequests.transactionId, transactionId),
+          eq(cancellationRequests.status, "ACTIVE"),
+          eq(cancellationRequests.delegationType, "RISK"),
+          eq(cancellationRequests.delegationStatus, "REQUIRED")
+        )).limit(1);
+      if (cancellationOwner && cancellationOwner.cause !== input.category) {
+        throw new Error("RISK_CANCELLATION_CAUSE_MISMATCH");
+      }
       if (transaction.state === "RISK_HOLD") {
         const existing = await currentActiveCase(tx, transactionId, true);
         if (!existing) throw new Error("RISK_CASE_REQUIRED");
@@ -228,8 +249,10 @@ export async function recordRisk(
       if (!active && !recordOnly) throw new Error("RISK_NOT_ELIGIBLE");
       if (active && await currentActiveCase(tx, transactionId, true)) throw new Error("RISK_ALREADY_ACTIVE");
 
-      const owner = active ? { sourceOwnerType: null, sourceOwnerId: null } :
-        await recordOnlyOwner(tx, transactionId, transaction.state);
+      const owner = cancellationOwner
+        ? { sourceOwnerType: "CANCELLATION_CASE", sourceOwnerId: cancellationOwner.id }
+        : active ? { sourceOwnerType: null, sourceOwnerId: null } :
+          await recordOnlyOwner(tx, transactionId, transaction.state);
       const lifecycle = active ? "OPEN" : postProcessing ? "POST_PROCESSING_RECORDED" : "RECORD_ONLY";
       const [risk] = await tx.insert(riskHolds).values({
         transactionId,
@@ -260,6 +283,24 @@ export async function recordRisk(
       });
       await tx.update(riskHolds).set({ currentEventId: event.id, updatedAt: new Date() })
         .where(eq(riskHolds.id, risk.id));
+      if (cancellationOwner) {
+        const [closed] = await tx.update(cancellationRequests).set({
+          status: "CLOSED",
+          lifecycle: "REFERRED_TO_RISK",
+          decision: "RISK_HANDOFF",
+          delegationStatus: "REFERRED",
+          riskCaseId: risk.id,
+          resolvedAt: new Date(),
+          stateVersion: cancellationOwner.stateVersion + 1
+        }).where(and(
+          eq(cancellationRequests.id, cancellationOwner.id),
+          eq(cancellationRequests.status, "ACTIVE"),
+          eq(cancellationRequests.delegationType, "RISK"),
+          eq(cancellationRequests.delegationStatus, "REQUIRED"),
+          eq(cancellationRequests.stateVersion, cancellationOwner.stateVersion)
+        )).returning({ id: cancellationRequests.id });
+        if (!closed) throw new Error("CANCELLATION_DELEGATION_CONFLICT");
+      }
 
       let nextState = transaction.state;
       let nextVersion = transaction.stateVersion;

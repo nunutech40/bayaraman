@@ -17,7 +17,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "job:payment-expiry": "tsx src/server/jobs/run-payment-expiry.ts",
-    "job:confirmation-recovery": "tsx src/server/jobs/run-confirmation-recovery.ts"
+    "job:confirmation-recovery": "tsx src/server/jobs/run-confirmation-recovery.ts",
+    "job:cancellation-reconciliation-timeout": "tsx src/server/jobs/run-cancellation-reconciliation-timeout.ts",
+    "job:cancellation-response-timeout": "tsx src/server/jobs/run-cancellation-response-timeout.ts"
   },
   "dependencies": {
     "argon2": "^0.45.1",

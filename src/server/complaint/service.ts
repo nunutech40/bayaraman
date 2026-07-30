@@ -10,6 +10,7 @@ import {
   complaintEvents,
   complaintFinancialHandoffs,
   complaintHolds,
+  cancellationRequests,
   sellerPayoutDestinations,
   transactionParticipants,
   transactionTerms,
@@ -144,6 +145,13 @@ export async function recordComplaint(
     assertVersion(transaction.stateVersion, input.expectedStateVersion);
     const correlationId = randomUUID();
     const existing = await activeCase(tx, transactionId, true);
+    const [cancellationOwner] = await tx.select().from(cancellationRequests)
+      .where(and(
+        eq(cancellationRequests.transactionId, transactionId),
+        eq(cancellationRequests.status, "ACTIVE"),
+        eq(cancellationRequests.delegationType, "COMPLAINT"),
+        eq(cancellationRequests.delegationStatus, "REQUIRED")
+      )).limit(1);
 
     if (transaction.state === "PAYOUT_ON_HOLD") {
       if (!existing) throw new Error("COMPLAINT_CASE_REQUIRED");
@@ -189,6 +197,24 @@ export async function recordComplaint(
       sourceAuthorRole: input.sourceAuthorRole
     });
     await tx.update(complaintHolds).set({ currentEventId: event.id }).where(eq(complaintHolds.id, complaint.id));
+    if (cancellationOwner) {
+      const [closed] = await tx.update(cancellationRequests).set({
+        status: "CLOSED",
+        lifecycle: "REFERRED_TO_COMPLAINT",
+        decision: "COMPLAINT_HANDOFF",
+        delegationStatus: "REFERRED",
+        complaintCaseId: complaint.id,
+        resolvedAt: new Date(),
+        stateVersion: cancellationOwner.stateVersion + 1
+      }).where(and(
+        eq(cancellationRequests.id, cancellationOwner.id),
+        eq(cancellationRequests.status, "ACTIVE"),
+        eq(cancellationRequests.delegationType, "COMPLAINT"),
+        eq(cancellationRequests.delegationStatus, "REQUIRED"),
+        eq(cancellationRequests.stateVersion, cancellationOwner.stateVersion)
+      )).returning({ id: cancellationRequests.id });
+      if (!closed) throw new Error("CANCELLATION_DELEGATION_CONFLICT");
+    }
 
     let nextState = transaction.state;
     let nextVersion = transaction.stateVersion;

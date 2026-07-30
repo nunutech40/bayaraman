@@ -85,6 +85,13 @@
       "when": 1785499200000,
       "tag": "0011_bayar011_risk_hold_review",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785585600000,
+      "tag": "0012_bayar010_cancellation_lifecycle",
+      "breakpoints": true
     }
   ]
 }
