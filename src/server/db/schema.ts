@@ -474,13 +474,29 @@ export const confirmationLinks = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
+    buyerAccountId: uuid("buyer_account_id").notNull().references(() => accounts.id),
     tokenHash: text("token_hash").notNull(),
     buyerWhatsappSnapshot: text("buyer_whatsapp_snapshot").notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),
+    reminderDueAt: timestamp("reminder_due_at", { withTimezone: true }).notNull(),
+    reminderRecordedAt: timestamp("reminder_recorded_at", { withTimezone: true }),
+    reminderRecordedByAccountId: uuid("reminder_recorded_by_account_id").references(() => accounts.id),
+    reminderEvidenceReference: text("reminder_evidence_reference"),
+    overdueAt: timestamp("overdue_at", { withTimezone: true }),
+    idempotencyKey: text("idempotency_key").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
-  (table) => [uniqueIndex("confirmation_links_token_hash_unique").on(table.tokenHash)]
+  (table) => [
+    uniqueIndex("confirmation_links_token_hash_unique").on(table.tokenHash),
+    uniqueIndex("confirmation_links_one_transaction_unique").on(table.transactionId),
+    uniqueIndex("confirmation_links_idempotency_unique").on(table.transactionId, table.idempotencyKey),
+    foreignKey({
+      name: "confirmation_links_buyer_participant_fk",
+      columns: [table.transactionId, table.buyerAccountId],
+      foreignColumns: [transactionParticipants.transactionId, transactionParticipants.accountId]
+    })
+  ]
 );
 
 export const confirmationOtps = pgTable("confirmation_otps", {
@@ -490,8 +506,48 @@ export const confirmationOtps = pgTable("confirmation_otps", {
   attempts: integer("attempts").notNull().default(0),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  lastRequestedAt: timestamp("last_requested_at", { withTimezone: true }),
+  sendWindowStartedAt: timestamp("send_window_started_at", { withTimezone: true }),
+  sendCount: integer("send_count").notNull().default(0),
+  cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  deliveryResult: text("delivery_result").notNull().default("PENDING"),
+  idempotencyKey: text("idempotency_key").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
-});
+}, (table) => [
+  check("confirmation_otps_attempts_check", sql.raw("attempts >= 0 AND attempts <= 5")),
+  check("confirmation_otps_send_count_check", sql.raw("send_count >= 0 AND send_count <= 3")),
+  check("confirmation_otps_delivery_result_check", sql.raw("delivery_result IN ('PENDING', 'SENT', 'FAILED', 'UNKNOWN')")),
+  uniqueIndex("confirmation_otps_one_active_link_unique")
+    .on(table.confirmationLinkId)
+    .where(sql`${table.supersededAt} IS NULL AND ${table.verifiedAt} IS NULL`),
+  uniqueIndex("confirmation_otps_idempotency_unique").on(table.confirmationLinkId, table.idempotencyKey)
+]);
+
+export const confirmationExceptions = pgTable("confirmation_exceptions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
+  buyerCompletionCheckpointId: uuid("buyer_completion_checkpoint_id").notNull().references(() => whatsappCheckpoints.id, { onDelete: "restrict" }),
+  reason: text("reason").notNull(),
+  evidenceReference: text("evidence_reference").notNull(),
+  firstApprovedByAdminId: uuid("first_approved_by_admin_id").notNull().references(() => accounts.id),
+  firstApprovedAt: timestamp("first_approved_at", { withTimezone: true }).notNull().defaultNow(),
+  secondApprovedByAdminId: uuid("second_approved_by_admin_id").references(() => accounts.id),
+  secondApprovedAt: timestamp("second_approved_at", { withTimezone: true }),
+  decision: text("decision").notNull().default("PENDING_APPROVAL"),
+  idempotencyKey: text("idempotency_key").notNull(),
+  expectedStateVersion: integer("expected_state_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("confirmation_exceptions_decision_check", sql.raw("decision IN ('PENDING_APPROVAL', 'APPROVED', 'REJECTED')")),
+  check("confirmation_exceptions_distinct_admin_check", sql.raw("second_approved_by_admin_id IS NULL OR second_approved_by_admin_id <> first_approved_by_admin_id")),
+  uniqueIndex("confirmation_exceptions_idempotency_unique").on(table.transactionId, table.idempotencyKey),
+  uniqueIndex("confirmation_exceptions_one_pending_transaction_unique")
+    .on(table.transactionId)
+    .where(sql`${table.decision} = 'PENDING_APPROVAL'`),
+  index("confirmation_exceptions_transaction_idx").on(table.transactionId)
+]);
 
 export const cancellationRequests = pgTable(
   "cancellation_requests",
