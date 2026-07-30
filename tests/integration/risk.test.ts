@@ -213,6 +213,7 @@ integration("BAYAR-011 risk hold and release gate", () => {
         result: "PROCESSING",
         amount: 115000,
         destinationSnapshot: "BCA ******4321",
+        startedAt: new Date(),
         startedByAccountId: approvalAdminTwoId
       });
       const claimed = await claimRiskRefundHandoff(tx, {
@@ -237,8 +238,9 @@ integration("BAYAR-011 risk hold and release gate", () => {
     const otherOperationId = randomUUID();
     await client.query(
       `INSERT INTO financial_operations
-       (id, transaction_id, type, result, amount, destination_snapshot, started_by_account_id)
-       VALUES ($1, $2, 'REFUND', 'FAILED', 115000, 'BCA ******4321', $3)`,
+       (id, transaction_id, type, result, amount, destination_snapshot,
+        started_at, completed_at, started_by_account_id)
+       VALUES ($1, $2, 'REFUND', 'FAILED', 115000, 'BCA ******4321', now(), now(), $3)`,
       [otherOperationId, transactionId, approvalAdminTwoId]
     );
     await expect(db.transaction((tx) => claimRiskRefundHandoff(tx, {
@@ -376,6 +378,17 @@ integration("BAYAR-011 risk hold and release gate", () => {
       "MIDTRANS_SETTLEMENT",
       evidence,
       { key: randomUUID(), requestHash: hashRequest(evidence) }
+    );
+    const blockedEvidence = {
+      status: "BLOCKED" as const,
+      evidenceReference: "pending-legal-review",
+      expectedGateVersion: before.stateVersion
+    };
+    await recordReleaseGateEvidence(
+      { id: gateAdminId, isAdmin: true },
+      "LEGAL_COMPLIANCE",
+      blockedEvidence,
+      { key: randomUUID(), requestHash: hashRequest(blockedEvidence) }
     );
     const evaluation = {
       expectedGateVersion: before.stateVersion

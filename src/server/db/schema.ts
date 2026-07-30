@@ -761,7 +761,7 @@ export const adminTaskAssignments = pgTable("admin_task_assignments", {
   assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
   revokedAt: timestamp("revoked_at", { withTimezone: true })
 }, (table) => [
-  check("admin_task_assignments_scope_check", sql.raw("task_scope IN ('COMPLAINT_INTAKE', 'COMPLAINT_APPROVAL', 'RISK_INTAKE', 'RISK_APPROVAL', 'RELEASE_GATE_REVIEW', 'CANCELLATION_RECONCILIATION', 'CANCELLATION_EVIDENCE', 'CANCELLATION_APPROVAL')")),
+  check("admin_task_assignments_scope_check", sql.raw("task_scope IN ('COMPLAINT_INTAKE', 'COMPLAINT_APPROVAL', 'RISK_INTAKE', 'RISK_APPROVAL', 'RELEASE_GATE_REVIEW', 'CANCELLATION_RECONCILIATION', 'CANCELLATION_EVIDENCE', 'CANCELLATION_APPROVAL', 'FINANCIAL_PREPARE', 'FINANCIAL_APPROVE', 'FINANCIAL_EXECUTE', 'FINANCIAL_RECONCILE')")),
   uniqueIndex("admin_task_assignments_active_scope_unique")
     .on(table.accountId, table.taskScope)
     .where(sql`${table.revokedAt} IS NULL`)
@@ -1079,22 +1079,135 @@ export const financialOperations = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "cascade" }),
     type: operationType("type").notNull(),
-    result: operationResult("result").notNull().default("PROCESSING"),
+    result: operationResult("result"),
     amount: integer("amount").notNull(),
     destinationSnapshot: text("destination_snapshot").notNull(),
     bankReference: text("bank_reference"),
+    evidenceHash: text("evidence_hash"),
+    route: text("route"),
     attempt: integer("attempt").notNull().default(1),
+    preparedAt: timestamp("prepared_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    retryOfOperationId: uuid("retry_of_operation_id"),
+    rootOperationId: uuid("root_operation_id"),
+    sourceType: text("source_type"),
+    sourceHandoffId: uuid("source_handoff_id"),
+    sourceHash: text("source_hash"),
+    sourceFinalizedAt: timestamp("source_finalized_at", { withTimezone: true }),
+    sourceState: transactionState("source_state"),
+    sourceStateVersion: integer("source_state_version"),
+    externalIdempotencyKey: text("external_idempotency_key"),
+    selectedCapabilityAssessmentId: uuid("selected_capability_assessment_id"),
+    stateVersion: integer("state_version").notNull().default(0),
     startedByAccountId: uuid("started_by_account_id").notNull().references(() => accounts.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true })
   },
   (table) => [
     index("financial_operations_transaction_idx").on(table.transactionId),
+    uniqueIndex("financial_operations_external_key_unique")
+      .on(table.externalIdempotencyKey)
+      .where(sql`${table.externalIdempotencyKey} IS NOT NULL`),
     uniqueIndex("financial_operations_active_unique")
       .on(table.transactionId, table.type)
-      .where(sql.raw("result IN ('PROCESSING', 'UNKNOWN')"))
+      .where(sql.raw("result IS NULL OR result IN ('PROCESSING', 'UNKNOWN')")),
+    check("financial_operations_amount_check", sql.raw("amount > 0")),
+    check("financial_operations_attempt_check", sql.raw("attempt > 0 AND state_version >= 0")),
+    check("financial_operations_route_check", sql.raw("route IS NULL OR route IN ('MANUAL_PAYOUT', 'MIDTRANS_REFUND', 'MANUAL_REFUND', 'MANUAL_SPLIT')")),
+    check("financial_operations_source_check", sql.raw("source_type IS NULL OR source_type IN ('COMPLAINT', 'RISK', 'FUNDED_CANCELLATION', 'LATE_FUND')")),
+    check("financial_operations_lifecycle_check", sql.raw(
+      "(result IS NULL AND started_at IS NULL AND completed_at IS NULL AND bank_reference IS NULL AND evidence_hash IS NULL) OR " +
+      "(result = 'PROCESSING' AND started_at IS NOT NULL AND completed_at IS NULL) OR " +
+      "(result IN ('SUCCESS', 'FAILED', 'UNKNOWN') AND started_at IS NOT NULL AND completed_at IS NOT NULL)"
+    )),
+    check("financial_operations_success_evidence_check", sql.raw(
+      "result <> 'SUCCESS' OR (NULLIF(BTRIM(bank_reference), '') IS NOT NULL AND NULLIF(BTRIM(evidence_hash), '') IS NOT NULL)"
+    ))
   ]
 );
+
+export const financialOperationApprovals = pgTable("financial_operation_approvals", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  operationId: uuid("operation_id").notNull().references(() => financialOperations.id, { onDelete: "restrict" }),
+  adminAccountId: uuid("admin_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  decision: text("decision").notNull(),
+  note: text("note"),
+  operationStateVersion: integer("operation_state_version").notNull(),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("financial_operation_approvals_decision_check", sql.raw("decision IN ('APPROVED', 'REJECTED')")),
+  uniqueIndex("financial_operation_approvals_admin_unique").on(table.operationId, table.adminAccountId),
+  uniqueIndex("financial_operation_approvals_idempotency_unique").on(table.operationId, table.idempotencyKey),
+  index("financial_operation_approvals_operation_idx").on(table.operationId)
+]);
+
+export const financialOperationReauthGrants = pgTable("financial_operation_reauth_grants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  operationId: uuid("operation_id").notNull().references(() => financialOperations.id, { onDelete: "restrict" }),
+  adminAccountId: uuid("admin_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  sessionIdHash: text("session_id_hash").notNull(),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
+  stateVersion: integer("state_version").notNull().default(0),
+  idempotencyKey: text("idempotency_key").notNull()
+}, (table) => [
+  check("financial_operation_reauth_grants_version_check", sql.raw("state_version >= 0")),
+  check("financial_operation_reauth_grants_time_check", sql.raw("expires_at > granted_at")),
+  uniqueIndex("financial_operation_reauth_grants_idempotency_unique").on(table.operationId, table.idempotencyKey),
+  uniqueIndex("financial_operation_reauth_grants_one_active_unique")
+    .on(table.operationId, table.adminAccountId)
+    .where(sql`${table.consumedAt} IS NULL AND ${table.invalidatedAt} IS NULL`),
+  index("financial_operation_reauth_grants_operation_idx").on(table.operationId)
+]);
+
+export const financialSplitCalculations = pgTable("financial_split_calculations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  rootOperationId: uuid("root_operation_id").notNull().references(() => financialOperations.id, { onDelete: "restrict" }),
+  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "restrict" }),
+  buyerAmount: integer("buyer_amount").notNull(),
+  sellerAmount: integer("seller_amount").notNull(),
+  poolAmount: integer("pool_amount").notNull(),
+  currency: text("currency").notNull().default("IDR"),
+  calculationHash: text("calculation_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("financial_split_calculations_amount_check", sql.raw("buyer_amount > 0 AND seller_amount > 0 AND buyer_amount + seller_amount = pool_amount")),
+  check("financial_split_calculations_currency_check", sql.raw("currency = 'IDR'")),
+  uniqueIndex("financial_split_calculations_root_unique").on(table.rootOperationId)
+]);
+
+export const refundCapabilityAssessments = pgTable("refund_capability_assessments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "restrict" }),
+  sourceType: text("source_type").notNull(),
+  sourceHandoffId: uuid("source_handoff_id").notNull(),
+  sourceHash: text("source_hash").notNull(),
+  sourceStateVersion: integer("source_state_version").notNull(),
+  invoiceId: uuid("invoice_id").notNull().references(() => paymentInvoices.id, { onDelete: "restrict" }),
+  authoritativeProviderEventId: uuid("authoritative_provider_event_id").notNull().references(() => paymentProviderEvents.id, { onDelete: "restrict" }),
+  providerOrderId: text("provider_order_id").notNull(),
+  amount: integer("amount").notNull(),
+  currency: text("currency").notNull().default("IDR"),
+  capabilitySnapshotHash: text("capability_snapshot_hash").notNull(),
+  capability: text("capability").notNull(),
+  evidenceReference: text("evidence_reference"),
+  evidenceHash: text("evidence_hash"),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+  actorAccountId: uuid("actor_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  correlationId: uuid("correlation_id").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [
+  check("refund_capability_assessments_source_check", sql.raw("source_type IN ('COMPLAINT', 'RISK', 'FUNDED_CANCELLATION', 'LATE_FUND')")),
+  check("refund_capability_assessments_capability_check", sql.raw("capability IN ('SUPPORTED', 'UNSUPPORTED', 'UNKNOWN')")),
+  check("refund_capability_assessments_amount_check", sql.raw("amount > 0 AND currency = 'IDR'")),
+  uniqueIndex("refund_capability_assessments_idempotency_unique").on(table.actorAccountId, table.idempotencyKey),
+  index("refund_capability_assessments_transaction_idx").on(table.transactionId)
+]);
 
 export const idempotencyKeys = pgTable(
   "idempotency_keys",

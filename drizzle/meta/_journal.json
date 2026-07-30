@@ -92,6 +92,13 @@
       "when": 1785585600000,
       "tag": "0012_bayar010_cancellation_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785672000000,
+      "tag": "0013_bayar008_financial_operations",
+      "breakpoints": true
     }
   ]
 }

@@ -95,8 +95,10 @@ integration("BAYAR-001 PostgreSQL foundation", () => {
 
       await client.query(
         `INSERT INTO financial_operations
-         (id, transaction_id, type, result, amount, destination_snapshot, bank_reference, started_by_account_id)
-         VALUES ($1, $2, 'REFUND', 'SUCCESS', 10000, 'masked', 'reference', $3)`,
+         (id, transaction_id, type, result, amount, destination_snapshot,
+          bank_reference, evidence_hash, started_at, completed_at, started_by_account_id)
+         VALUES ($1, $2, 'REFUND', 'SUCCESS', 10000, 'masked', 'reference',
+          repeat('a', 64), now(), now(), $3)`,
         [operationId, transactionId, accountId]
       );
       await expectConstraintFailure(() => client.query(
