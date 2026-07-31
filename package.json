@@ -19,7 +19,11 @@
     "job:payment-expiry": "tsx src/server/jobs/run-payment-expiry.ts",
     "job:confirmation-recovery": "tsx src/server/jobs/run-confirmation-recovery.ts",
     "job:cancellation-reconciliation-timeout": "tsx src/server/jobs/run-cancellation-reconciliation-timeout.ts",
-    "job:cancellation-response-timeout": "tsx src/server/jobs/run-cancellation-response-timeout.ts"
+    "job:cancellation-response-timeout": "tsx src/server/jobs/run-cancellation-response-timeout.ts",
+    "job:run": "tsx src/server/jobs/run-job.ts",
+    "job:payment-reconciliation-sla": "tsx src/server/jobs/run-job.ts payment-reconciliation-sla",
+    "job:financial-sla-escalation": "tsx src/server/jobs/run-job.ts financial-sla-escalation",
+    "job:notification-delivery": "tsx src/server/jobs/run-job.ts notification-delivery"
   },
   "dependencies": {
     "argon2": "^0.45.1",

@@ -16,6 +16,7 @@ import {
   refundCapabilityAssessments,
   riskHolds,
   sellerPayoutDestinations,
+  slaTrackers,
   transactionParticipants,
   transactions,
   transactionTerms
@@ -839,6 +840,23 @@ export async function readTransactionFinancialOperations(admin: Admin, transacti
 
 export async function readFinancialSla(admin: Admin, operationId: string) {
   const operation = await readFinancialOperation(admin, operationId);
+  const rootOperationId = operation.rootOperationId ?? operation.id;
+  const [tracker] = await db.select().from(slaTrackers).where(and(
+    eq(slaTrackers.sourceType, "FINANCIAL_OPERATION_ROOT"),
+    eq(slaTrackers.sourceId, rootOperationId)
+  )).limit(1);
+  if (tracker) {
+    return {
+      operationId,
+      eligibleAt: tracker.startedAt.toISOString(),
+      approvalAt: tracker.slaType === "PAYOUT" ? null : tracker.startedAt.toISOString(),
+      targetAt: tracker.targetAt.toISOString(),
+      nextEscalationAt: tracker.nextEscalationAt.toISOString(),
+      escalationCount: tracker.escalationCount,
+      result: operation.result,
+      handledAt: tracker.handledAt?.toISOString() ?? null
+    };
+  }
   const eligibleAt = operation.preparedAt;
   const targetHours = operation.type === "PAYOUT" ? 24 : 48;
   return {

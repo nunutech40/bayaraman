@@ -12,6 +12,7 @@ export async function recordTransactionEvent(
   input: {
     transactionId?: string;
     actorAccountId?: string;
+    systemActorName?: string;
     eventType: string;
     beforeState?: TransactionState;
     afterState?: TransactionState;
@@ -24,6 +25,9 @@ export async function recordTransactionEvent(
   await database.insert(auditEvents).values({
     transactionId: input.transactionId,
     actorAccountId: input.actorAccountId,
+    actorScope: input.actorAccountId
+      ? `ACCOUNT:${input.actorAccountId}`
+      : `SYSTEM:${input.systemActorName ?? "application"}`,
     eventType: input.eventType,
     beforeState: input.beforeState,
     afterState: input.afterState,

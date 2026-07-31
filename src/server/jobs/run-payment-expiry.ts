@@ -1,11 +1,11 @@
 import "dotenv/config";
-import { expirePaymentInvoices } from "./payment-expiry";
+import { runCliJob } from "./run-job";
 
-expirePaymentInvoices()
-  .then((expired) => {
-    console.log(`Expired payment invoices: ${expired}`);
+runCliJob("payment-expiry")
+  .then(({ projection }) => {
+    console.log(JSON.stringify(projection));
   })
   .catch((error: unknown) => {
-    console.error("Payment expiry job failed", error);
+    console.error("Payment expiry job failed", error instanceof Error ? error.message : "JOB_FAILED");
     process.exitCode = 1;
   });

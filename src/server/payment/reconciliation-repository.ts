@@ -35,3 +35,19 @@ export async function ensurePaymentReconciliation(
   if (!created) throw new Error("RECONCILIATION_CREATE_FAILED");
   return created;
 }
+
+export async function completeOpenPaymentReconciliations(
+  tx: any,
+  invoiceId: string,
+  evidenceReference: string,
+  completedAt = new Date()
+) {
+  return tx.update(paymentReconciliations).set({
+    result: "SUCCESS",
+    evidenceReference,
+    completedAt
+  }).where(and(
+    eq(paymentReconciliations.invoiceId, invoiceId),
+    sql`completed_at IS NULL`
+  )).returning({ id: paymentReconciliations.id });
+}

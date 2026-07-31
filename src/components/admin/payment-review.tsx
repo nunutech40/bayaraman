@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SlaTaskSummary from "./sla-task-summary";
 
 type ReviewState = "idle" | "loading" | "ready" | "empty" | "error";
 
@@ -35,6 +36,7 @@ export default function PaymentReview() {
         <p className="eyebrow">Admin · Payment review</p>
         <h1>Rekonsiliasi Midtrans</h1>
         <p className="muted">Periksa status provider, validasi event, dan kasus UNKNOWN. Tidak ada aksi payout atau refund di layar ini.</p>
+        <SlaTaskSummary domain="PAYMENT" />
         <div className="stack">
           <label htmlFor="transaction-id">ID transaksi</label>
           <input id="transaction-id" value={transactionId} onChange={(event) => setTransactionId(event.target.value)} placeholder="UUID transaksi" />

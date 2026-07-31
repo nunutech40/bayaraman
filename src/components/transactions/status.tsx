@@ -12,6 +12,10 @@ type TransactionData = {
   participants: Array<{ role: string; name: string; whatsapp: string; joined: boolean }>;
   item: { itemName: string; description: string } | null;
   terms: { itemPrice: number; shippingCost: number; serviceFee: number; totalAmount: number } | null;
+  operationalStatus?: {
+    deadlines: Array<{ type: string; targetAtWib: string; handled: boolean; escalationCount: number }>;
+    notifications: Array<{ type: string; status: string; finalFailure: boolean; createdAt: string }>;
+  };
 };
 type PaymentData = {
   invoiceId: string;
@@ -172,6 +176,24 @@ export function TransactionStatus({ transactionId }: { transactionId: string }) 
           <>
             <p className="status-line">Status: <strong>{data.state}</strong></p>
             <p className="muted">{data.participants.length}/2 participant sudah terikat.</p>
+            {data.operationalStatus && (
+              <div className="complaint-summary" role="status" aria-label="Status operasional">
+                <p className="section-label">Status operasional</p>
+                {data.operationalStatus.deadlines
+                  .filter((item) => !item.handled)
+                  .map((item) => (
+                    <p key={item.type} className="muted">
+                      {item.type}: batas {item.targetAtWib} WIB
+                      {item.escalationCount ? ` · ${item.escalationCount} eskalasi` : ""}
+                    </p>
+                  ))}
+                {data.operationalStatus.notifications.slice(-3).map((item) => (
+                  <p key={`${item.type}-${item.createdAt}`} className="muted">
+                    {item.type}: {item.finalFailure ? "pengiriman gagal, Admin menindaklanjuti" : item.status}
+                  </p>
+                ))}
+              </div>
+            )}
             <ul className="participant-list">
               {data.participants.map((participant) => <li key={participant.role}><strong>{participant.role}</strong> · {participant.name} · {participant.joined ? "sudah bergabung" : "menunggu"}</li>)}
             </ul>

@@ -37,6 +37,7 @@ export async function recordAuthEvent(
 ): Promise<void> {
   await db.insert(auditEvents).values({
     actorAccountId,
+    actorScope: actorAccountId ? `ACCOUNT:${actorAccountId}` : "SYSTEM:auth",
     eventType,
     correlationId: randomUUID(),
     payload: sanitizeAuthAuditPayload(eventType, payload)

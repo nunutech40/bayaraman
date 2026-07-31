@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { runCancellationResponseTimeout } from "./cancellation-response-timeout";
+import { runCliJob } from "./run-job";
 
-const transitioned = await runCancellationResponseTimeout();
-console.log(JSON.stringify({ transitioned }));
+console.log(JSON.stringify((await runCliJob("cancellation-response-timeout")).projection));

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SlaTaskSummary from "./sla-task-summary";
 
 type Operation = {
   id: string;
@@ -87,6 +88,7 @@ export default function FinancialOperations() {
       <section className="surface">
         <p className="eyebrow">Admin · Financial operations</p>
         <h1>Payout, refund, dan split</h1>
+        <SlaTaskSummary domain="FINANCIAL" />
         <p className="muted">
           Persiapkan dan jalankan operasi terhadap destination yang sudah
           dibekukan. Status Midtrans tidak pernah otomatis menjadi payout.

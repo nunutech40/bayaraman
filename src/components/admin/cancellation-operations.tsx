@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SlaTaskSummary from "./sla-task-summary";
 
 type CancellationAdminData = {
   transaction: { id: string; state: string; stateVersion: number };
@@ -52,6 +53,7 @@ export default function CancellationOperations() {
       <section className="surface" aria-labelledby="cancellation-admin-title">
         <p className="eyebrow">Admin operation</p>
         <h1 id="cancellation-admin-title">Cancellation review</h1>
+        <SlaTaskSummary domain="CANCELLATION" />
         <label>ID transaksi
           <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} />
         </label>

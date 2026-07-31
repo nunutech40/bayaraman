@@ -87,8 +87,9 @@ integration("BAYAR-001 PostgreSQL foundation", () => {
         ));
 
       await client.query(
-        `INSERT INTO audit_events (id, actor_account_id, event_type, correlation_id)
-         VALUES ($1, $2, 'FOUNDATION_TEST', $3)`,
+        `INSERT INTO audit_events
+         (id, actor_account_id, actor_scope, event_type, correlation_id)
+         VALUES ($1, $2::uuid, 'ACCOUNT:' || $2::uuid::text, 'FOUNDATION_TEST', $3)`,
         [auditId, accountId, randomUUID()]
       );
       await expectConstraintFailure(() => client.query("DELETE FROM audit_events WHERE id = $1", [auditId]));

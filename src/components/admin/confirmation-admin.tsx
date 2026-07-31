@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SlaTaskSummary from "./sla-task-summary";
 
 export default function ConfirmationAdmin() {
   const [transactionId, setTransactionId] = useState("");
@@ -52,6 +53,7 @@ export default function ConfirmationAdmin() {
 
   return <main className="app-shell"><section className="surface" aria-labelledby="admin-confirmation-title">
     <p className="eyebrow">Admin · Confirmation recovery</p><h1 id="admin-confirmation-title">Status konfirmasi Buyer</h1>
+    <SlaTaskSummary domain="CONFIRMATION" />
     <div className="stack"><label htmlFor="confirmation-transaction">ID transaksi<input id="confirmation-transaction" value={transactionId} onChange={(event) => setTransactionId(event.target.value)} /></label><button type="button" onClick={load} disabled={busy || !transactionId}>{busy ? "Memuat..." : "Muat status"}</button></div>
     {data && <section className="payment-panel" aria-live="polite"><p className="status-line">State: <strong>{data.state}</strong></p><p className="muted">State version {data.stateVersion}. Token, OTP, dan raw evidence tidak ditampilkan.</p>
       {!data.link && <button type="button" onClick={createLink} disabled={busy}>Buat link konfirmasi</button>}

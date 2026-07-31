@@ -480,6 +480,7 @@ export const confirmationLinks = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),
     reminderDueAt: timestamp("reminder_due_at", { withTimezone: true }).notNull(),
+    reminderQueuedAt: timestamp("reminder_queued_at", { withTimezone: true }),
     reminderRecordedAt: timestamp("reminder_recorded_at", { withTimezone: true }),
     reminderRecordedByAccountId: uuid("reminder_recorded_by_account_id").references(() => accounts.id),
     reminderEvidenceReference: text("reminder_evidence_reference"),
@@ -1230,12 +1231,208 @@ export const idempotencyKeys = pgTable(
   ]
 );
 
+export const jobRuns = pgTable(
+  "job_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    jobName: text("job_name").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    correlationId: uuid("correlation_id").notNull(),
+    status: text("status").notNull().default("RUNNING"),
+    runVersion: integer("run_version").notNull().default(0),
+    attemptCount: integer("attempt_count").notNull().default(1),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    leaseOwnerHash: text("lease_owner_hash"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    result: jsonb("result"),
+    errorCategory: text("error_category"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("job_runs_name_idempotency_unique").on(table.jobName, table.idempotencyKey),
+    uniqueIndex("job_runs_correlation_unique").on(table.correlationId),
+    index("job_runs_recovery_idx").on(table.status, table.leaseExpiresAt),
+    check(
+      "job_runs_name_check",
+      sql.raw("job_name IN ('payment-expiry', 'confirmation-reminder', 'confirmation-overdue', 'payment-reconciliation-sla', 'cancellation-reconciliation-timeout', 'cancellation-response-timeout', 'financial-sla-escalation', 'notification-delivery')")
+    ),
+    check("job_runs_status_check", sql.raw("status IN ('RUNNING', 'SUCCESS', 'FAILED')")),
+    check("job_runs_version_attempt_check", sql.raw("run_version >= 0 AND attempt_count > 0")),
+    check(
+      "job_runs_lifecycle_check",
+      sql.raw("(status = 'RUNNING' AND completed_at IS NULL AND lease_owner_hash IS NOT NULL AND lease_expires_at IS NOT NULL) OR (status IN ('SUCCESS', 'FAILED') AND completed_at IS NOT NULL AND lease_owner_hash IS NULL AND lease_expires_at IS NULL)")
+    )
+  ]
+);
+
+export const jobRunAttempts = pgTable(
+  "job_run_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    jobRunId: uuid("job_run_id").notNull().references(() => jobRuns.id, { onDelete: "restrict" }),
+    attemptNumber: integer("attempt_number").notNull(),
+    result: text("result").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+    leaseOwnerHash: text("lease_owner_hash").notNull(),
+    errorCategory: text("error_category"),
+    correlationId: uuid("correlation_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("job_run_attempts_number_unique").on(table.jobRunId, table.attemptNumber),
+    check("job_run_attempts_number_check", sql.raw("attempt_number > 0")),
+    check("job_run_attempts_result_check", sql.raw("result IN ('SUCCESS', 'FAILED', 'UNKNOWN')"))
+  ]
+);
+
+export const slaTrackers = pgTable(
+  "sla_trackers",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "restrict" }),
+    slaType: text("sla_type").notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id").notNull(),
+    sourceTimestampKind: text("source_timestamp_kind").notNull().default("CANONICAL"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    targetAt: timestamp("target_at", { withTimezone: true }).notNull(),
+    handledAt: timestamp("handled_at", { withTimezone: true }),
+    nextEscalationAt: timestamp("next_escalation_at", { withTimezone: true }).notNull(),
+    escalationCount: integer("escalation_count").notNull().default(0),
+    lastEscalatedAt: timestamp("last_escalated_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("sla_trackers_source_unique").on(table.slaType, table.sourceType, table.sourceId),
+    index("sla_trackers_due_idx").on(table.handledAt, table.nextEscalationAt),
+    check(
+      "sla_trackers_type_check",
+      sql.raw("sla_type IN ('PAYMENT_RECONCILIATION', 'CONFIRMATION_REMINDER', 'CONFIRMATION_OVERDUE', 'CANCELLATION_RECONCILIATION', 'CANCELLATION_RESPONSE', 'PAYOUT', 'REFUND', 'SPLIT')")
+    ),
+    check(
+      "sla_trackers_timestamp_kind_check",
+      sql.raw("source_timestamp_kind IN ('CANONICAL', 'LEGACY_FALLBACK')")
+    ),
+    check(
+      "sla_trackers_time_check",
+      sql.raw("target_at >= started_at AND next_escalation_at >= target_at AND escalation_count >= 0")
+    )
+  ]
+);
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    transactionId: uuid("transaction_id").notNull().references(() => transactions.id, { onDelete: "restrict" }),
+    notificationType: text("notification_type").notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id").notNull(),
+    recipientScope: text("recipient_scope").notNull(),
+    recipientAccountId: uuid("recipient_account_id").references(() => accounts.id, { onDelete: "restrict" }),
+    channel: text("channel").notNull(),
+    occurrenceKey: text("occurrence_key").notNull(),
+    payloadSnapshotHash: text("payload_snapshot_hash").notNull(),
+    status: text("status").notNull().default("PENDING"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    activeAttemptNumber: integer("active_attempt_number"),
+    leaseOwnerHash: text("lease_owner_hash"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    notificationVersion: integer("notification_version").notNull().default(0),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    finalFailureAt: timestamp("final_failure_at", { withTimezone: true }),
+    correlationId: uuid("correlation_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("notifications_occurrence_unique").on(
+      table.notificationType,
+      table.sourceType,
+      table.sourceId,
+      table.recipientScope,
+      table.channel,
+      table.occurrenceKey
+    ),
+    index("notifications_delivery_due_idx").on(table.channel, table.status, table.nextAttemptAt),
+    index("notifications_transaction_idx").on(table.transactionId),
+    check("notifications_channel_check", sql.raw("channel IN ('IN_APP', 'WHATSAPP')")),
+    check("notifications_status_check", sql.raw("status IN ('PENDING', 'SENT', 'FAILED', 'UNKNOWN')")),
+    check("notifications_attempt_check", sql.raw("attempt_count >= 0 AND attempt_count <= 3 AND notification_version >= 0")),
+    check(
+      "notifications_occurrence_check",
+      sql.raw("occurrence_key = 'ONCE' OR occurrence_key ~ '^ESCALATION:[1-9][0-9]*$'")
+    ),
+    check(
+      "notifications_recipient_check",
+      sql.raw("(recipient_scope LIKE 'ACCOUNT:%' AND recipient_account_id IS NOT NULL) OR (recipient_scope = 'ADMIN:SLA_NOTIFICATION_REVIEW' AND recipient_account_id IS NULL)")
+    ),
+    check(
+      "notifications_lease_check",
+      sql.raw("(active_attempt_number IS NULL AND lease_owner_hash IS NULL AND lease_expires_at IS NULL) OR (channel = 'WHATSAPP' AND active_attempt_number IS NOT NULL AND lease_owner_hash IS NOT NULL AND lease_expires_at IS NOT NULL)")
+    ),
+    check(
+      "notifications_sent_check",
+      sql.raw("status <> 'SENT' OR (sent_at IS NOT NULL AND final_failure_at IS NULL)")
+    ),
+    check(
+      "notifications_final_failure_check",
+      sql.raw("final_failure_at IS NULL OR (attempt_count = 3 AND status <> 'SENT')")
+    )
+  ]
+);
+
+export const notificationAttempts = pgTable(
+  "notification_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    notificationId: uuid("notification_id").notNull().references(() => notifications.id, { onDelete: "restrict" }),
+    attemptNumber: integer("attempt_number"),
+    eventType: text("event_type").notNull(),
+    result: text("result"),
+    providerReference: text("provider_reference"),
+    errorCategory: text("error_category"),
+    correctedAttemptId: uuid("corrected_attempt_id"),
+    correctionReason: text("correction_reason"),
+    correlationId: uuid("correlation_id").notNull(),
+    attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    uniqueIndex("notification_attempts_delivery_unique")
+      .on(table.notificationId, table.attemptNumber)
+      .where(sql`${table.eventType} = 'DELIVERY_RESULT'`),
+    foreignKey({
+      columns: [table.correctedAttemptId],
+      foreignColumns: [table.id]
+    }).onDelete("restrict"),
+    check("notification_attempts_event_type_check", sql.raw("event_type IN ('DELIVERY_RESULT', 'CORRECTION')")),
+    check(
+      "notification_attempts_result_check",
+      sql.raw("result IS NULL OR result IN ('SENT', 'FAILED', 'UNKNOWN')")
+    ),
+    check(
+      "notification_attempts_shape_check",
+      sql.raw("(event_type = 'DELIVERY_RESULT' AND attempt_number > 0 AND result IS NOT NULL AND corrected_attempt_id IS NULL AND correction_reason IS NULL) OR (event_type = 'CORRECTION' AND attempt_number IS NULL AND result IS NULL AND corrected_attempt_id IS NOT NULL AND NULLIF(BTRIM(correction_reason), '') IS NOT NULL)")
+    )
+  ]
+);
+
 export const auditEvents = pgTable(
   "audit_events",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     transactionId: uuid("transaction_id").references(() => transactions.id),
     actorAccountId: uuid("actor_account_id").references(() => accounts.id),
+    actorScope: text("actor_scope").notNull(),
     eventType: text("event_type").notNull(),
     beforeState: transactionState("before_state"),
     afterState: transactionState("after_state"),
@@ -1247,7 +1444,11 @@ export const auditEvents = pgTable(
   },
   (table) => [
     index("audit_events_transaction_idx").on(table.transactionId),
-    index("audit_events_correlation_idx").on(table.correlationId)
+    index("audit_events_correlation_idx").on(table.correlationId),
+    check(
+      "audit_events_actor_scope_check",
+      sql.raw("(actor_account_id IS NOT NULL AND actor_scope = 'ACCOUNT:' || actor_account_id::text) OR (actor_account_id IS NULL AND actor_scope LIKE 'SYSTEM:%')")
+    )
   ]
 );
 

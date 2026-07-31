@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { runCancellationReconciliationTimeout } from "./cancellation-reconciliation-timeout";
+import { runCliJob } from "./run-job";
 
-const transitioned = await runCancellationReconciliationTimeout();
-console.log(JSON.stringify({ transitioned }));
+console.log(JSON.stringify((await runCliJob("cancellation-reconciliation-timeout")).projection));

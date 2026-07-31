@@ -17,6 +17,7 @@ import {
   verifyMidtransSignature
 } from "@/server/providers/midtrans/signature";
 import { isAuthoritativePayment } from "@/server/providers/payment-status";
+import { completeOpenPaymentReconciliations } from "./reconciliation-repository";
 
 export const midtransWebhookSchema = z.object({
   order_id: z.string().trim().min(1).max(200),
@@ -180,6 +181,7 @@ export async function ingestMidtransWebhook(input: unknown) {
       )).returning({ id: transactions.id });
       if (!updated) throw new Error("STATE_VERSION_CONFLICT");
       await tx.update(paymentInvoices).set({ authoritativeProviderEventId: event.id }).where(eq(paymentInvoices.id, invoice.id));
+      await completeOpenPaymentReconciliations(tx, invoice.id, event.id);
       await recordTransactionEvent(tx, {
         transactionId: transaction.id,
         eventType: "PAYMENT_CONFIRMED_MIDTRANS",
@@ -191,6 +193,12 @@ export async function ingestMidtransWebhook(input: unknown) {
         payload: { provider: "MIDTRANS", providerEventId, eventId: event.id }
       });
       return { kind: "accepted" as const, eventId: event.id, transactionId: transaction.id, authoritative: true };
+    }
+
+    if (invoice && signatureValid &&
+        ["deny", "cancel", "failure", "expire"].includes(parsed.transaction_status.toLowerCase()) &&
+        outcome === "NON_AUTHORITATIVE") {
+      await completeOpenPaymentReconciliations(tx, invoice.id, event.id);
     }
 
     if (invoice && transaction && (

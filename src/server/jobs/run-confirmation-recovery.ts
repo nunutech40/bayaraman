@@ -1,12 +1,12 @@
 import "dotenv/config";
-import { runConfirmationOverdueSweep, runConfirmationReminderSweep } from "@/server/confirmation/recovery";
+import { runCliJob } from "./run-job";
 
 const command = process.argv[2];
 
 if (command === "CONFIRMATION_REMINDER_SWEEP") {
-  await runConfirmationReminderSweep();
+  console.log(JSON.stringify((await runCliJob("confirmation-reminder")).projection));
 } else if (command === "CONFIRMATION_OVERDUE_SWEEP") {
-  await runConfirmationOverdueSweep();
+  console.log(JSON.stringify((await runCliJob("confirmation-overdue")).projection));
 } else {
   throw new Error("Usage: npm run job:confirmation-recovery -- CONFIRMATION_REMINDER_SWEEP|CONFIRMATION_OVERDUE_SWEEP");
 }

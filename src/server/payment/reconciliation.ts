@@ -14,6 +14,7 @@ import { processProviderEvent } from "@/server/payment/process-provider-event";
 import { isAuthoritativePayment, type PaymentStatusAdapter } from "@/server/providers/payment-status";
 import { MidtransPaymentStatusAdapter } from "@/server/providers/midtrans/status";
 import { ensurePaymentReconciliation } from "./reconciliation-repository";
+import { completeOpenPaymentReconciliations } from "./reconciliation-repository";
 
 const COMMAND = "MIDTRANS_PAYMENT_RECONCILIATION";
 
@@ -132,6 +133,7 @@ export async function reconcileMidtransStatus(
       )).returning({ id: transactions.id });
       if (!updated) throw new Error("STATE_VERSION_CONFLICT");
       await tx.update(paymentInvoices).set({ authoritativeProviderEventId: event.id }).where(eq(paymentInvoices.id, invoice.id));
+      await completeOpenPaymentReconciliations(tx, invoice.id, event.id);
       await recordTransactionEvent(tx, {
         transactionId,
         eventType: "PAYMENT_CONFIRMED_MIDTRANS_STATUS",
@@ -144,6 +146,10 @@ export async function reconcileMidtransStatus(
       });
       result = { ...result, authoritative: true, state: "PAYMENT_CONFIRMED" };
     } else {
+      if (["deny", "cancel", "failure", "expire"].includes(status.transactionStatus) &&
+          outcome === "NON_AUTHORITATIVE") {
+        await completeOpenPaymentReconciliations(tx, invoice.id, event.id);
+      }
       const decisionCode = outcome === "UNKNOWN" || !amountMatches || !currencyMatches
         ? "PROVIDER_STATUS_REVIEW" as const
         : "LATE_FUND_HANDOFF" as const;
