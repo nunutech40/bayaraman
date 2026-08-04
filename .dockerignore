@@ -1,0 +1,10 @@
+.git
+.next
+node_modules
+coverage
+.env
+.env.*
+!.env.staging.example
+docs/archive
+prototype
+tests
