@@ -3,7 +3,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/server/db";
 import { accountWhatsappVerifications, accounts } from "@/server/db/schema";
 import { authConfig } from "./config";
-import { createManualWhatsappDeliveryAdapter, type WhatsappDeliveryAdapter } from "./whatsapp-delivery";
+import { configuredWhatsappOtp, createConfiguredWhatsappDeliveryAdapter, type WhatsappDeliveryAdapter } from "./whatsapp-delivery";
 
 function hashCode(code: string): string {
   return createHash("sha256").update(code).digest("hex");
@@ -16,10 +16,10 @@ export function generateOtp(): string {
 export async function requestWhatsappVerification(
   accountId: string,
   whatsappNumber: string,
-  adapter: WhatsappDeliveryAdapter = createManualWhatsappDeliveryAdapter()
+  adapter: WhatsappDeliveryAdapter = createConfiguredWhatsappDeliveryAdapter()
 ): Promise<{ challengeId: string; delivery: Awaited<ReturnType<WhatsappDeliveryAdapter["send"]>> }> {
   const now = new Date();
-  const code = generateOtp();
+  const code = configuredWhatsappOtp(generateOtp);
   const challenge = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${accountId}, 0))`);
 

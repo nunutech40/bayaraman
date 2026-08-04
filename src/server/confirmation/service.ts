@@ -13,7 +13,7 @@ import {
   whatsappCheckpointHeads,
   whatsappCheckpoints
 } from "@/server/db/schema";
-import { createManualWhatsappDeliveryAdapter, type WhatsappDeliveryAdapter } from "@/server/auth/whatsapp-delivery";
+import { configuredWhatsappOtp, createConfiguredWhatsappDeliveryAdapter, type WhatsappDeliveryAdapter } from "@/server/auth/whatsapp-delivery";
 import { findIdempotentResult, saveIdempotentResult } from "@/server/transaction/mutation";
 import { recordTransactionEvent } from "@/server/transaction/audit";
 import { assertExpectedStateVersion } from "@/server/domain/transaction/state";
@@ -162,8 +162,8 @@ export async function readBuyerConfirmation(accountId: string, token: string) {
   return { ...linkProjection(link, transaction.state, transaction.stateVersion), otp: latest ? { deliveryResult: latest.deliveryResult, attempts: latest.attempts, expiresAt: latest.expiresAt.toISOString(), cooldownUntil: latest.cooldownUntil?.toISOString() ?? null, lockedUntil: latest.lockedUntil?.toISOString() ?? null } : null };
 }
 
-export async function requestConfirmationOtp(accountId: string, token: string, idempotency: Idempotency, adapter: WhatsappDeliveryAdapter = createManualWhatsappDeliveryAdapter()) {
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+export async function requestConfirmationOtp(accountId: string, token: string, idempotency: Idempotency, adapter: WhatsappDeliveryAdapter = createConfiguredWhatsappDeliveryAdapter()) {
+  const code = configuredWhatsappOtp(() => String(Math.floor(100000 + Math.random() * 900000)));
   const created = await db.transaction(async (tx) => {
     const command = "CONFIRMATION_OTP_REQUEST";
     const prior = await findIdempotentResult(tx, accountId, command, idempotency.key, idempotency.requestHash);
