@@ -78,6 +78,16 @@ Prototype statis berada di `prototype/` dan hanya menjadi demo UI/implementasi h
 
 GitHub Pages menggunakan branch `main` dan folder `/(root)`.
 
+## Staging
+
+Staging portfolio berjalan di:
+
+`https://bayaraman.103-59-94-121.nip.io`
+
+Runbook build/deploy OrbStack ke VPS, konfigurasi Caddy, health check,
+migration, dan rollback ada di
+`docs/deployment/staging-runbook.md`.
+
 ## Struktur
 
 ```text
